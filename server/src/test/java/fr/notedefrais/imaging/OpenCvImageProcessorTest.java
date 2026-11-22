@@ -1,0 +1,82 @@
+package fr.notedefrais.imaging;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import fr.notedefrais.expense.ImageFilter;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import static fr.notedefrais.imaging.TestImages.*;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+
+class OpenCvImageProcessorTest {
+
+    // Images synthétiques : voir TestImages
+
+    private final OpenCvImageProcessor processor = new OpenCvImageProcessor();
+
+    @Test
+    void recadre_un_ticket_photographie_de_travers_sur_fond_sombre() throws IOException {
+        byte[] photo = photoOfReceipt(1200, 1600, 500, 900, 12);
+
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        assertThat(out.getHeight()).isGreaterThan(out.getWidth());
+        assertThat(out.getWidth()).isBetween(450, 560);
+        assertThat(out.getHeight()).isBetween(850, 960);
+    }
+
+    @Test
+    void ne_recadre_pas_quand_aucun_document_n_est_detecte() throws IOException {
+        byte[] uniform = encode(filled(800, 600, new Color(200, 200, 200)));
+
+        ProcessedImage result = processor.process(uniform, ImageFilter.NONE);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isFalse();
+        assertThat(out.getWidth()).isEqualTo(800);
+        assertThat(out.getHeight()).isEqualTo(600);
+    }
+
+    @ParameterizedTest
+    @EnumSource(ImageFilter.class)
+    void chaque_filtre_produit_un_jpeg_valide(ImageFilter filter) throws IOException {
+        byte[] photo = photoOfReceipt(900, 1200, 400, 700, -8);
+
+        ProcessedImage result = processor.process(photo, filter);
+
+        assertThat(decode(result.jpeg())).isNotNull();
+    }
+
+    @Test
+    void le_filtre_netteté_augmente_le_contraste_local() throws IOException {
+        byte[] photo = photoOfReceipt(900, 1200, 400, 700, 0);
+
+        double plain = sharpness(processor.process(photo, ImageFilter.NONE).jpeg());
+        double enhanced = sharpness(processor.process(photo, ImageFilter.ENHANCE).jpeg());
+
+        assertThat(enhanced).isGreaterThan(plain);
+    }
+
+    @Test
+    void le_mode_scan_produit_une_image_quasi_binaire() throws IOException {
+        byte[] photo = photoOfReceipt(900, 1200, 400, 700, 5);
+
+        BufferedImage out = decode(processor.process(photo, ImageFilter.SCAN_BW).jpeg());
+
+        long extremes = 0, total = 0;
+        for (int y = 0; y < out.getHeight(); y += 4) {
+            for (int x = 0; x < out.getWidth(); x += 4) {
+                int v = out.getRaster().getSample(x, y, 0);
+                if (v < 40 || v > 215) extremes++;
+                total++;
+            }
+        }
+        assertThat((double) extremes / total).isGreaterThan(0.9);
+    }
+}

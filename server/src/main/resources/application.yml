@@ -1,0 +1,32 @@
+app:
+  # Justificatifs : <storage-dir>/<id>/original.<ext> (jamais modifié) et processed.jpg
+  storage-dir: ${NDF_STORAGE_DIR:./storage}
+  # Jeton exigé dans l'en-tête X-Api-Token ; vide = pas de contrôle (développement local uniquement)
+  api-token: ${NDF_API_TOKEN:}
+  claude:
+    enabled: ${NDF_CLAUDE_ENABLED:true}
+    model: ${NDF_CLAUDE_MODEL:claude-opus-5-5}
+    max-tokens: 16000
+
+spring:
+  application:
+    name: note-de-frais
+  threads:
+    virtual:
+      enabled: true
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 26MB
+  datasource:
+    # Base fichier par défaut ; pour PostgreSQL : NDF_DB_URL=jdbc:postgresql://host/ndf + NDF_DB_USER / NDF_DB_PASSWORD
+    url: ${NDF_DB_URL:jdbc:h2:file:./data/notedefrais;AUTO_SERVER=TRUE}
+    username: ${NDF_DB_USER:sa}
+    password: ${NDF_DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+server:
+  port: ${PORT:8080}
