@@ -1,0 +1,9 @@
+.claude/.cache/
+.claude/settings.local.json
+server/target/
+server/data/
+server/storage/
+app/build/
+app/.dart_tool/
+.idea/
+*.iml
