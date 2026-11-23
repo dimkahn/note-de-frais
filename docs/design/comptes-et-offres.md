@@ -221,6 +221,61 @@ Rien n'est à inventer : chaque identifiant vient de la console Google Cloud.
    cet appareil » → SHA-1 ou nom de paquet de l'identifiant Android incorrects, ou compte absent
    des utilisateurs test ; 401 → l'app et le serveur n'utilisent pas le même ID client Web.
 
+## Phase 4 : documents synchronisés sur le serveur
+
+Même principe que les dépenses : l'appareil fait foi tant que ses changements ne sont pas envoyés,
+identifiants UUID générés par le client, envois idempotents, suppressions logiques, isolation par
+compte (identifiant étranger → 404). **Pas d'analyse IA** : le rendu recadré/filtré est calculé sur
+l'appareil et envoyé tel quel avec l'original.
+
+**Modèle serveur (paquet `document`).** `Document` : id, `ownerId`, titre (1 à 200 caractères),
+`pageOrder` (liste ordonnée des identifiants de pages voulus par l'appareil), dates, `deleted`.
+`DocumentPage` : id, `documentId`, original (écriture unique) et son type, rendu (remplaçable),
+filtre, contour, `sizeBytes` (original + rendu), `renderVersion` (1, puis +1 à chaque nouveau
+rendu), `removed` (retrait logique : page absente de `pageOrder`). Fichiers dans
+`<storage-dir>/documents/<pageId>/` (racine distincte de celle des dépenses : un identifiant de page
+ne peut pas viser le dossier d'une dépense). **Quota** : un service `Quota` (paquet `account`) somme
+l'usage des dépenses non supprimées et des pages non retirées de documents non supprimés ;
+`QuotaExceededException` y déménage (elle concerne l'offre, pas la dépense).
+
+**API** (Bearer, comme `/api/expenses`) :
+
+| Endpoint | Résultat |
+|---|---|
+| `PUT /api/documents/{id}` `{title, pageIds}` | 200 `DocumentDto` ; crée le document s'il n'existe pas, sinon renomme et réordonne ; les pages déjà reçues absentes de `pageIds` sont retirées (logiquement), un identifiant pas encore reçu garde sa place pour la page envoyée ensuite ; 400 titre vide ou trop long |
+| `POST /api/documents/{id}/pages` multipart `pageId, original, processed, filter, corners` | 200 `PageDto` ; idempotent par `pageId` (renvoi = page existante, original intact) ; 403 `QUOTA_EXCEEDED` si `usage + original + rendu > quota` ; 415 type non image (rendu : JPEG) |
+| `POST /api/documents/{id}/pages/{pageId}/processed` multipart `processed, filter, corners` | 200 `PageDto` ; remplace le rendu, `renderVersion` +1, taille mise à jour ; l'original ne change pas ; pas de refus pour quota (comme le re-traitement d'une dépense) |
+| `DELETE /api/documents/{id}` | 204 ; suppression logique (libère le quota, fichiers conservés) |
+| `GET /api/documents/changes?since=` | documents du compte modifiés depuis (suppressions comprises) |
+| `GET /api/documents/{id}` | `DocumentDto` |
+| `GET /api/documents/{id}/pages/{pageId}/original` · `/processed` | octets |
+
+`DocumentDto` = `{id, title, pages: [{id, filter, corners, renderVersion}], deleted, createdAt,
+updatedAt}` ; `pages` = pages reçues et non retirées, dans l'ordre de `pageOrder`. Tout changement de
+page met à jour `updatedAt` du document (donc le fait remonter dans `changes`).
+
+**Synchro (app).** Le document porte un `SyncState` (`pendingUpload` à la création, `pendingUpdate`
+après un renommage / ajout / retrait / réajustement, `pendingDelete`) et chaque page le sien
+(`pendingUpload`, `pendingReprocess` après réajustement, `synced`) + sa `renderVersion`. Envoi d'un
+document en attente : `PUT` (titre + ordre complet des pages locales), puis chaque page non envoyée
+(`POST pages`) ou réajustée (`POST …/processed`), puis le document est marqué envoyé — seulement s'il
+n'a pas changé entre-temps (sinon il repart à la synchro suivante). Quota dépassé → le document
+reste en attente, compté dans le rapport, retenté à la synchro suivante (comme les dépenses). Réception
+(`changes` depuis une date propre aux documents) : un document en attente localement n'est pas
+écrasé ; sinon titre, ordre et pages viennent du serveur. **Fichiers téléchargés à la synchro** (le
+plus simple, comme les dépenses : un document reçu est consultable et exportable hors-ligne) :
+original et rendu d'une page nouvelle, rendu seul quand `renderVersion` a changé. Sans compte,
+rien ne change (documents locaux, en attente d'envoi) ; à la connexion ils partent vers le compte.
+Le client HTTP commun (en-têtes, erreurs 401/403/hors-ligne) est extrait d'`ExpenseApi`.
+
+**Plan de tests.** Serveur : création / renommage / ordre / retrait (service, `@DataJpaTest`) ; page
+idempotente, original intact ; nouveau rendu (original intact, version +1, taille) ; quota (refus
+403, usage = dépenses + documents, retrait et suppression libèrent) ; isolation 404 et 401 (flux
+`@SpringBootTest`) ; `changes`. App : `DocumentApi` (faux HTTP) ; transitions de `SyncState` du
+domaine ; migration SQLite ; `DocumentSyncService` (envoi, rejouable hors-ligne, quota, réception
+avec téléchargement, document local en attente non écrasé, suppression propagée) ;
+`DocumentRepository` (synchro seulement connecté) ; page Compte (message de quota avec documents).
+
 ## Plan de tests (ordre)
 
 Serveur : hash et vérification du mot de passe ; inscription (201, 409, 400) ; connexion (200, 401) ;
