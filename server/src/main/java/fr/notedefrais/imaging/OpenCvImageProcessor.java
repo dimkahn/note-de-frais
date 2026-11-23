@@ -35,6 +35,8 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     private static final int JPEG_QUALITY = 90;
     /** Tolérances successives de l'approximation en quadrilatère (bords irréguliers, coins arrondis). */
     private static final double[] APPROX_TOLERANCES = {0.02, 0.03, 0.05};
+    /** Écart maximal entre l'aire du contour et celle du quadrilatère retenu (15 %). */
+    private static final double MAX_FILL_GAP = 0.15;
     /** Passe « fond clair ». */
     private static final double WEAK_CLAHE_CLIP = 3.0;
     private static final double WEAK_CANNY_LOW = 20;
@@ -106,33 +108,45 @@ public final class OpenCvImageProcessor implements ImageProcessor {
         return edges;
     }
 
-    /** Plus grand contour à 4 coins, convexe, d'une aire plausible ; approximation assouplie progressivement. */
+    /**
+     * Contour à 4 coins, convexe, d'une aire plausible, qui remplit son quadrilatère (un objet
+     * arrondi ramené de force à 4 points est rejeté). Toutes les formes sont essayées à la tolérance
+     * stricte avant d'assouplir l'approximation.
+     */
     private static Optional<Point[]> findQuad(Mat edges, double imageArea, MatScope scope) {
         List<MatOfPoint> contours = new ArrayList<>();
         Imgproc.findContours(edges, contours, scope.add(new Mat()), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
         contours.forEach(scope::add);
-        return contours.stream()
+        List<MatOfPoint> candidates = contours.stream()
                 .sorted(Comparator.comparingDouble((MatOfPoint c) -> Imgproc.contourArea(c)).reversed())
                 .limit(5)
-                .map(c -> approximateQuad(c, imageArea, scope))
-                .flatMap(Optional::stream)
-                .findFirst();
-    }
-
-    private static Optional<Point[]> approximateQuad(MatOfPoint contour, double imageArea, MatScope scope) {
-        MatOfPoint2f c2f = scope.add(new MatOfPoint2f(contour.toArray()));
-        double perimeter = Imgproc.arcLength(c2f, true);
+                .toList();
         for (double tolerance : APPROX_TOLERANCES) {
-            MatOfPoint2f approx = scope.add(new MatOfPoint2f());
-            Imgproc.approxPolyDP(c2f, approx, tolerance * perimeter, true);
-            Point[] pts = approx.toArray();
-            if (pts.length != 4 || !Imgproc.isContourConvex(new MatOfPoint(pts))) {
-                continue;
+            for (MatOfPoint contour : candidates) {
+                Optional<Point[]> quad = approximateQuad(contour, tolerance, imageArea, scope);
+                if (quad.isPresent()) {
+                    return quad;
+                }
             }
-            double ratio = Imgproc.contourArea(new MatOfPoint(pts)) / imageArea;
-            return ratio >= MIN_AREA_RATIO && ratio <= MAX_AREA_RATIO ? Optional.of(pts) : Optional.empty();
         }
         return Optional.empty();
+    }
+
+    private static Optional<Point[]> approximateQuad(MatOfPoint contour, double tolerance, double imageArea,
+                                                     MatScope scope) {
+        MatOfPoint2f c2f = scope.add(new MatOfPoint2f(contour.toArray()));
+        MatOfPoint2f approx = scope.add(new MatOfPoint2f());
+        Imgproc.approxPolyDP(c2f, approx, tolerance * Imgproc.arcLength(c2f, true), true);
+        Point[] pts = approx.toArray();
+        if (pts.length != 4 || !Imgproc.isContourConvex(new MatOfPoint(pts))) {
+            return Optional.empty();
+        }
+        double quadArea = Imgproc.contourArea(new MatOfPoint(pts));
+        double ratio = quadArea / imageArea;
+        double fill = Imgproc.contourArea(contour) / quadArea;
+        boolean plausible = ratio >= MIN_AREA_RATIO && ratio <= MAX_AREA_RATIO
+                && Math.abs(fill - 1) <= MAX_FILL_GAP;
+        return plausible ? Optional.of(pts) : Optional.empty();
     }
 
     private static Point[] scale(Point[] pts, double factor) {

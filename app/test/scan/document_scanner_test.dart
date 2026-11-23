@@ -110,6 +110,39 @@ void main() {
       expect(quad.bottomRight.y, closeTo(0.864, 0.02));
     });
 
+    test(
+      'ignore un grand objet clair arrondi à côté du ticket (main, assiette)',
+      () {
+        final img = cv.imdecode(
+          photoOfReceipt(1400, 1400, const [
+            (200, 300),
+            (560, 320),
+            (540, 1100),
+            (180, 1080),
+          ]),
+          cv.IMREAD_COLOR,
+        );
+        cv.ellipse(
+          img,
+          cv.Point(1050, 700),
+          cv.Point(330, 520),
+          15,
+          0,
+          360,
+          cv.Scalar(200, 210, 225),
+          thickness: -1,
+        );
+        final (_, photo) = cv.imencode('.jpg', img);
+        img.dispose();
+
+        final quad = scanner.detect(photo);
+
+        expect(quad, isNotNull);
+        expect(quad!.topLeft.x, closeTo(200 / 1400, 0.03));
+        expect(quad.bottomRight.x, closeTo(540 / 1400, 0.03));
+      },
+    );
+
     test('trouve un ticket blanc posé sur du bois clair', () {
       final quad = scanner.detect(
         photoOnLightBackground(

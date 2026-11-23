@@ -32,6 +32,25 @@ class OpenCvImageProcessorTest {
     }
 
     @Test
+    void ignore_un_grand_objet_clair_arrondi_a_cote_du_ticket() throws IOException {
+        BufferedImage img = filled(1400, 1400, new Color(45, 35, 30));
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setColor(new Color(235, 232, 225));
+        g.fillPolygon(new int[] {200, 560, 540, 180}, new int[] {300, 320, 1100, 1080}, 4);
+        g.setColor(new Color(225, 210, 200));
+        g.rotate(Math.toRadians(15), 1050, 700);
+        g.fillOval(1050 - 330, 700 - 520, 660, 1040);
+        g.dispose();
+
+        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, null);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        assertThat(out.getWidth()).isBetween(330, 400);
+        assertThat(out.getHeight()).isBetween(740, 820);
+    }
+
+    @Test
     void recadre_un_ticket_blanc_pose_sur_du_bois_clair() throws IOException {
         byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
                 new Color(215, 190, 150), new Color(245, 242, 238));

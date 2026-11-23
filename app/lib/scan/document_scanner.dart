@@ -23,6 +23,9 @@ final class DocumentScanner {
   static const _maxAreaRatio = 0.98;
   static const _jpegQuality = 90;
   static const _approxTolerances = [0.02, 0.03, 0.05];
+
+  /// Écart maximal entre l'aire du contour et celle du quadrilatère retenu (15 %).
+  static const _maxFillGap = 0.15;
   static const _weakClaheClip = 3.0;
   static const _weakCannyLow = 20.0;
   static const _weakCannyHigh = 60.0;
@@ -161,8 +164,9 @@ final class DocumentScanner {
     }
   }
 
-  /// Plus grand contour à 4 coins, convexe, d'une aire plausible ; l'approximation est assouplie
-  /// progressivement (bords de ticket irréguliers, coins arrondis).
+  /// Contour à 4 coins, convexe, d'une aire plausible, qui remplit son quadrilatère (un objet
+  /// arrondi ramené de force à 4 points est rejeté). Toutes les formes sont essayées à la
+  /// tolérance stricte avant d'assouplir l'approximation (bords irréguliers, coins arrondis).
   Quad? _withEdges(cv.Mat edges, cv.Mat gray) {
     final (contours, hierarchy) = cv.findContours(
       edges,
@@ -171,16 +175,26 @@ final class DocumentScanner {
     );
     try {
       final imageArea = (gray.rows * gray.cols).toDouble();
-      final sorted = contours.toList()
-        ..sort((a, b) => cv.contourArea(b).compareTo(cv.contourArea(a)));
-      for (final contour in sorted.take(5)) {
-        final perimeter = cv.arcLength(contour, true);
-        for (final tolerance in _approxTolerances) {
-          final approx = cv.approxPolyDP(contour, tolerance * perimeter, true);
+      final candidates =
+          (contours.toList()..sort(
+                (a, b) => cv.contourArea(b).compareTo(cv.contourArea(a)),
+              ))
+              .take(5)
+              .toList();
+      for (final tolerance in _approxTolerances) {
+        for (final contour in candidates) {
+          final approx = cv.approxPolyDP(
+            contour,
+            tolerance * cv.arcLength(contour, true),
+            true,
+          );
           try {
             if (approx.length != 4 || !cv.isContourConvex(approx)) continue;
-            final ratio = cv.contourArea(approx) / imageArea;
-            if (ratio < _minAreaRatio || ratio > _maxAreaRatio) break;
+            final quadArea = cv.contourArea(approx);
+            final ratio = quadArea / imageArea;
+            if (ratio < _minAreaRatio || ratio > _maxAreaRatio) continue;
+            final fill = cv.contourArea(contour) / quadArea;
+            if ((fill - 1).abs() > _maxFillGap) continue;
             return Quad.fromUnordered([
               for (final p in approx.toList())
                 Corner(p.x / gray.cols, p.y / gray.rows),
