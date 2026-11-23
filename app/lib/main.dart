@@ -73,7 +73,7 @@ class NoteDeFraisApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Notes de frais',
+      title: 'Note de frais',
       debugShowCheckedModeBanner: false,
       locale: const Locale('fr', 'FR'),
       supportedLocales: const [Locale('fr', 'FR')],

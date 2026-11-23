@@ -7,7 +7,7 @@ import 'export_service.dart';
 /// Téléchargements selon la plateforme :
 /// - Android : dossier public `Download` (création de fichiers autorisée sans permission depuis
 ///   Android 10 ; `requestLegacyExternalStorage` couvre Android 10) ;
-/// - iOS : dossier Documents de l'app, visible dans Fichiers › Sur mon iPhone › Notes de frais ;
+/// - iOS : dossier Documents de l'app, visible dans Fichiers › Sur mon iPhone › Note de frais ;
 /// - desktop : dossier Téléchargements de l'utilisateur.
 final class PlatformDownloadsFolder implements DownloadsFolder {
   const PlatformDownloadsFolder();
