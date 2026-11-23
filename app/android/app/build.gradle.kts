@@ -52,6 +52,11 @@ android {
         release {
             // Sans key.properties : clé de debug, pour que `flutter run --release` fonctionne en local.
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // Minification R8 conservée ; règles propres à l'app (ML Kit) en plus de celles d'Android.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
