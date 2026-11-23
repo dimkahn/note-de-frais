@@ -84,6 +84,67 @@ void main() {
     expect(File(removed.originalPath).existsSync(), isTrue);
   });
 
+  test(
+    'réajuste une page : nouveau rendu, original intact, ancien rendu effacé',
+    () async {
+      final doc = await repo.create([
+        capture([1], processed: [9]),
+        capture([2]),
+      ]);
+      final before = doc.pages.first;
+
+      await repo.adjustPage(
+        doc.id,
+        before.id,
+        corners: Quad.inset(0.2),
+        filter: ImageFilter.sharpen,
+        processedJpeg: [7],
+      );
+
+      final after = repo.byId(doc.id)!.pages.first;
+      expect(after.id, before.id);
+      expect(after.processedPath, isNot(before.processedPath));
+      expect(await File(after.processedPath).readAsBytes(), [7]);
+      expect(File(before.processedPath).existsSync(), isFalse);
+      expect(after.originalPath, before.originalPath);
+      expect(await File(after.originalPath).readAsBytes(), [1]);
+      expect(after.corners, Quad.inset(0.2));
+      expect(after.filter, ImageFilter.sharpen);
+      expect(
+        (await store.documents()).single.pages.first.processedPath,
+        after.processedPath,
+      );
+    },
+  );
+
+  test(
+    'si l\'enregistrement échoue, la page garde son rendu précédent',
+    () async {
+      final doc = await repo.create([
+        capture([1], processed: [9]),
+      ]);
+      final before = doc.pages.first;
+      await store.close();
+
+      await expectLater(
+        repo.adjustPage(
+          doc.id,
+          before.id,
+          corners: Quad.inset(0.2),
+          filter: ImageFilter.sharpen,
+          processedJpeg: [7],
+        ),
+        throwsA(anything),
+      );
+
+      expect(await File(before.processedPath).readAsBytes(), [9]);
+      store = await LocalStore.open(
+        inMemoryDatabasePath,
+        factory: databaseFactoryFfi,
+      );
+    },
+  );
+
   test('renomme un document', () async {
     final doc = await repo.create([
       capture([1]),

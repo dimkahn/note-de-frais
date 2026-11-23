@@ -41,6 +41,8 @@ class AdjustScreen extends StatefulWidget {
     this.initialQuad,
     this.fallbackQuad,
     this.initialFilter = ImageFilter.enhance,
+    this.title = 'Ajuster le cadrage',
+    this.onSkip,
     this.compute = _isolate,
   });
 
@@ -52,6 +54,11 @@ class AdjustScreen extends StatefulWidget {
   /// Utilisé si rien n'est détecté sur la photo (ex. contour vu en direct par la caméra).
   final Quad? fallbackQuad;
   final ImageFilter initialFilter;
+  final String title;
+
+  /// Reprise de plusieurs pages : « Passer » remplace « Reprendre », appelle ce rappel puis ferme
+  /// l'écran sans résultat.
+  final VoidCallback? onSkip;
   final Compute compute;
 
   @override
@@ -142,7 +149,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Ajuster le cadrage'),
+        title: Text(widget.title),
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         actions: [
@@ -207,11 +214,15 @@ class _AdjustScreenState extends State<AdjustScreen> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.white,
                             ),
-                            onPressed: _busy
-                                ? null
-                                : () => Navigator.pop(context),
-                            icon: const Icon(Icons.replay),
-                            label: const Text('Reprendre'),
+                            onPressed: _busy ? null : _leave,
+                            icon: Icon(
+                              widget.onSkip == null
+                                  ? Icons.replay
+                                  : Icons.skip_next,
+                            ),
+                            label: Text(
+                              widget.onSkip == null ? 'Reprendre' : 'Passer',
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -236,6 +247,11 @@ class _AdjustScreenState extends State<AdjustScreen> {
               ),
             ),
     );
+  }
+
+  void _leave() {
+    widget.onSkip?.call();
+    Navigator.pop(context);
   }
 
   Widget _editor() => CornerEditor(

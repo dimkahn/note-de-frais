@@ -72,6 +72,32 @@ class DocumentRepository extends ChangeNotifier {
   Future<void> removePage(String id, String pageId) =>
       _update(id, (d, now) => d.withoutPage(pageId, at: now));
 
+  /// Nouveau rendu d'une page, calculé depuis son original (inchangé) ; l'ancien rendu est effacé
+  /// une fois le document enregistré.
+  Future<void> adjustPage(
+    String id,
+    String pageId, {
+    required Quad corners,
+    required ImageFilter filter,
+    required List<int> processedJpeg,
+  }) async {
+    final page = byId(id)?.pages.where((p) => p.id == pageId).firstOrNull;
+    if (page == null) return;
+    final processed = await _files.saveProcessedVersion(pageId, processedJpeg);
+    await _update(
+      id,
+      (d, now) => d.withPageAdjusted(
+        pageId,
+        corners: corners,
+        filter: filter,
+        processedPath: processed.path,
+        at: now,
+      ),
+    );
+    // Seulement une fois la base à jour : la page ne pointe jamais vers un fichier effacé.
+    await _files.deleteProcessed(pageId, page.processedPath);
+  }
+
   Future<void> rename(String id, String title) =>
       _update(id, (d, now) => d.renamed(title, at: now));
 

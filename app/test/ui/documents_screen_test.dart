@@ -9,6 +9,7 @@ import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/domain/expense.dart';
 import 'package:note_de_frais/domain/quad.dart';
+import 'package:note_de_frais/scan/adjust_screen.dart';
 import 'package:note_de_frais/ui/documents_screen.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
@@ -67,7 +68,7 @@ void main() {
             PageCapture(
               photoPath: (File(
                 '${dir.path}/p$d$p.jpg',
-              )..writeAsBytesSync([1])).path,
+              )..writeAsBytesSync(_jpeg())).path,
               corners: Quad.inset(0.1),
               filter: ImageFilter.enhance,
               processedJpeg: _jpeg(),
@@ -276,5 +277,89 @@ void main() {
     );
     expect(File('${dir.path}/Download/Contrat 0.pdf').existsSync(), isTrue);
     expect(sharer.shared, isEmpty);
+  });
+
+  testWidgets('montre la photo d\'origine d\'une page en lecture', (
+    tester,
+  ) async {
+    await pump(tester, documents: 1, pages: 2);
+    await openDocument(tester);
+    await tester.tap(find.text('1'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Original'));
+    await tester.pumpAndSettle();
+
+    final shown = tester.widget<Image>(find.byType(Image).first).image;
+    expect(
+      (shown as FileImage).file.path,
+      repo.documents.single.pages.first.originalPath,
+    );
+  });
+
+  testWidgets(
+    'ajuste la page lue à partir de son original, cadrage et filtre repris',
+    (tester) async {
+      await pump(tester, documents: 1, pages: 2);
+      await openDocument(tester);
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Ajuster la page'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final page = repo.documents.single.pages[1];
+      final screen = tester.widget<AdjustScreen>(find.byType(AdjustScreen));
+      expect(screen.photoPath, page.originalPath);
+      expect(screen.initialQuad, page.corners);
+      expect(screen.initialFilter, page.filter);
+      expect(screen.onSkip, isNull);
+    },
+  );
+
+  testWidgets('ajuste une page depuis l\'appui long sur sa vignette', (
+    tester,
+  ) async {
+    await pump(tester, documents: 1, pages: 2);
+    await openDocument(tester);
+
+    await tester.longPress(find.text('2'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ajuster la page'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    final screen = tester.widget<AdjustScreen>(find.byType(AdjustScreen));
+    expect(screen.photoPath, repo.documents.single.pages[1].originalPath);
+  });
+
+  /// Laisse passer le vrai temps (ouverture d'écran, lecture et décodage de l'original) jusqu'à ce
+  /// que [text] soit affiché.
+  Future<void> waitFor(WidgetTester tester, String text) async {
+    for (var i = 0; i < 100 && find.text(text).evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+  }
+
+  testWidgets('reprend toutes les pages une à une depuis le menu', (
+    tester,
+  ) async {
+    await pump(tester, documents: 1, pages: 2);
+    await openDocument(tester);
+
+    await tester.tap(find.byTooltip('Plus d\'options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Ajuster toutes les pages'));
+    await waitFor(tester, 'Passer');
+    expect(find.text('Page 1 sur 2'), findsOneWidget);
+
+    await tester.tap(find.text('Passer'));
+    await waitFor(tester, 'Page 2 sur 2');
+
+    expect(find.text('Page 2 sur 2'), findsOneWidget);
   });
 }

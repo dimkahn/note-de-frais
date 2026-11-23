@@ -46,6 +46,34 @@ void main() {
     expect(updated.pages.map((p) => p.id), ['p1', 'p3']);
   });
 
+  test(
+    'réajuste une page sans changer son original ni sa place dans le document',
+    () {
+      final later = created.add(const Duration(minutes: 5));
+      final doc = empty()
+          .withPage(page('p1'), at: created)
+          .withPage(page('p2'), at: created)
+          .withPage(page('p3'), at: created);
+
+      final updated = doc.withPageAdjusted(
+        'p2',
+        corners: Quad.inset(0.2),
+        filter: ImageFilter.scanBw,
+        processedPath: '/docs/p2/processed-v2.jpg',
+        at: later,
+      );
+
+      expect(updated.pages.map((p) => p.id), ['p1', 'p2', 'p3']);
+      final p2 = updated.pages[1];
+      expect(p2.originalPath, '/docs/p2/original.jpg');
+      expect(p2.processedPath, '/docs/p2/processed-v2.jpg');
+      expect(p2.corners, Quad.inset(0.2));
+      expect(p2.filter, ImageFilter.scanBw);
+      expect(updated.pages[0].processedPath, '/docs/p1/processed.jpg');
+      expect(updated.updatedAt, later);
+    },
+  );
+
   test('renomme sans accepter un titre vide', () {
     final doc = empty();
 

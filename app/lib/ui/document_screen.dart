@@ -36,12 +36,23 @@ class DocumentScreen extends StatelessWidget {
           PopupMenuButton<String>(
             tooltip: 'Plus d\'options',
             onSelected: (action) => switch (action) {
+              'adjust' => adjustDocumentPages(
+                repo,
+                doc.id,
+                (page, title) =>
+                    adjustPageOnScreen(context, page, title, skippable: true),
+              ),
               'rename' => _rename(context, repo, doc),
               _ => _delete(context, repo, doc),
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'rename', child: Text('Renommer')),
-              PopupMenuItem(
+            itemBuilder: (_) => [
+              if (doc.pages.isNotEmpty)
+                const PopupMenuItem(
+                  value: 'adjust',
+                  child: Text('Ajuster toutes les pages'),
+                ),
+              const PopupMenuItem(value: 'rename', child: Text('Renommer')),
+              const PopupMenuItem(
                 value: 'delete',
                 child: Text('Supprimer le document'),
               ),
@@ -99,19 +110,42 @@ class DocumentScreen extends StatelessWidget {
     ScannedDocument doc,
     ScannedPage page,
   ) async {
-    final remove = await showModalBottomSheet<bool>(
+    final action = await showModalBottomSheet<_PageAction>(
       context: context,
       showDragHandle: true,
       builder: (context) => SafeArea(
-        child: ListTile(
-          leading: const Icon(Icons.delete_outline),
-          title: const Text('Retirer la page'),
-          subtitle: const Text('La photo d\'origine reste sur l\'appareil.'),
-          onTap: () => Navigator.pop(context, true),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.crop_rotate),
+              title: const Text('Ajuster la page'),
+              subtitle: const Text(
+                'Cadrage et filtre, depuis la photo d\'origine.',
+              ),
+              onTap: () => Navigator.pop(context, _PageAction.adjust),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Retirer la page'),
+              subtitle: const Text(
+                'La photo d\'origine reste sur l\'appareil.',
+              ),
+              onTap: () => Navigator.pop(context, _PageAction.remove),
+            ),
+          ],
         ),
       ),
     );
-    if (remove ?? false) await repo.removePage(doc.id, page.id);
+    if (!context.mounted) return;
+    switch (action) {
+      case _PageAction.adjust:
+        await adjustDocumentPage(context, repo, doc.id, page);
+      case _PageAction.remove:
+        await repo.removePage(doc.id, page.id);
+      case null:
+        break;
+    }
   }
 
   Future<void> _rename(
@@ -155,6 +189,8 @@ class DocumentScreen extends StatelessWidget {
   }
 }
 
+enum _PageAction { adjust, remove }
+
 class _PageTile extends StatelessWidget {
   const _PageTile({
     required this.number,
@@ -173,7 +209,7 @@ class _PageTile extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
       label: 'Page $number',
-      hint: 'Appui long pour retirer la page',
+      hint: 'Appui long pour ajuster ou retirer la page',
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -263,6 +299,7 @@ class _PageViewer extends StatefulWidget {
 
 class _PageViewerState extends State<_PageViewer> {
   late int _page = widget.initialPage;
+  bool _original = false;
   late final _controller = PageController(initialPage: widget.initialPage);
 
   @override
@@ -285,11 +322,43 @@ class _PageViewerState extends State<_PageViewer> {
         title: Text('Page ${page + 1} sur ${pages.length}'),
         actions: [
           IconButton(
+            tooltip: 'Ajuster la page',
+            icon: const Icon(Icons.crop_rotate),
+            onPressed: () => adjustDocumentPage(
+              context,
+              repo,
+              widget.documentId,
+              pages[page],
+            ),
+          ),
+          IconButton(
             tooltip: 'Retirer la page',
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _remove(repo, pages[page]),
           ),
         ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: SegmentedButton<bool>(
+              style: SegmentedButton.styleFrom(
+                foregroundColor: Colors.white,
+                selectedForegroundColor: Colors.black,
+                selectedBackgroundColor: Colors.white,
+              ),
+              segments: [
+                ButtonSegment(
+                  value: false,
+                  label: Text('Recadré · ${pages[page].filter.label}'),
+                ),
+                const ButtonSegment(value: true, label: Text('Original')),
+              ],
+              selected: {_original},
+              onSelectionChanged: (s) => setState(() => _original = s.first),
+            ),
+          ),
+        ),
       ),
       body: PageView.builder(
         controller: _controller,
@@ -299,9 +368,15 @@ class _PageViewerState extends State<_PageViewer> {
           maxScale: 6,
           child: Center(
             child: Semantics(
-              label: 'Page ${i + 1}',
+              label: _original
+                  ? 'Page ${i + 1}, photo d\'origine'
+                  : 'Page ${i + 1}',
               image: true,
-              child: Image.file(File(pages[i].processedPath)),
+              child: Image.file(
+                File(
+                  _original ? pages[i].originalPath : pages[i].processedPath,
+                ),
+              ),
             ),
           ),
         ),

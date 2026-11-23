@@ -105,4 +105,30 @@ void main() {
 
     expect(await result, isNull);
   });
+
+  testWidgets(
+    'en reprise de plusieurs pages, affiche la page et permet de la passer',
+    (tester) async {
+      final path = save(uniform(600, 800));
+      var skipped = false;
+
+      final result = await open(
+        tester,
+        AdjustScreen(
+          photoPath: path,
+          initialQuad: Quad.inset(0.1),
+          title: 'Page 2 sur 5',
+          onSkip: () => skipped = true,
+          compute: _inline,
+        ),
+      );
+      expect(find.text('Page 2 sur 5'), findsOneWidget);
+      expect(find.text('Reprendre'), findsNothing);
+      await tester.tap(find.text('Passer'));
+      await settleRealAsync(tester);
+
+      expect(skipped, isTrue);
+      expect(await result, isNull);
+    },
+  );
 }

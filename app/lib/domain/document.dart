@@ -65,6 +65,29 @@ final class ScannedDocument {
     updatedAt: at,
   );
 
+  /// Nouveau rendu d'une page à partir de son original, qui ne change pas ; la page garde sa place.
+  ScannedDocument withPageAdjusted(
+    String pageId, {
+    required Quad corners,
+    required ImageFilter filter,
+    required String processedPath,
+    required DateTime at,
+  }) => _copy(
+    pages: [
+      for (final p in pages)
+        p.id == pageId
+            ? ScannedPage(
+                id: p.id,
+                originalPath: p.originalPath,
+                processedPath: processedPath,
+                corners: corners,
+                filter: filter,
+              )
+            : p,
+    ],
+    updatedAt: at,
+  );
+
   ScannedDocument renamed(String title, {required DateTime at}) {
     final trimmed = title.trim();
     return trimmed.isEmpty ? this : _copy(title: trimmed, updatedAt: at);

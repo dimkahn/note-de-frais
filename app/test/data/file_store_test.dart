@@ -56,4 +56,30 @@ void main() {
   test('refuse un identifiant qui sortirait du dossier', () async {
     expect(() => store.saveProcessed('../x', [1]), throwsArgumentError);
   });
+
+  test('chaque nouveau rendu va dans un nouveau fichier', () async {
+    final first = await store.saveProcessedVersion('abc', [1]);
+
+    final second = await store.saveProcessedVersion('abc', [2]);
+
+    expect(second.path, isNot(first.path));
+    expect(await first.readAsBytes(), [1]);
+    expect(await second.readAsBytes(), [2]);
+  });
+
+  test('efface un ancien rendu', () async {
+    final old = await store.saveProcessedVersion('abc', [1]);
+
+    await store.deleteProcessed('abc', old.path);
+
+    expect(old.existsSync(), isFalse);
+  });
+
+  test('n\'efface jamais un original', () async {
+    final original = await store.saveOriginal('abc', (await photo([1])).path);
+
+    await store.deleteProcessed('abc', original.path);
+
+    expect(await original.readAsBytes(), [1]);
+  });
 }
