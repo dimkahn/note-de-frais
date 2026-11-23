@@ -31,6 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 class ExpenseServiceTest {
 
+    static final UUID OWNER = UUID.randomUUID();
+    static final UUID STRANGER = UUID.randomUUID();
     static final byte[] PHOTO = {10, 20, 30};
     static final byte[] PROCESSED = {99};
     static final ReceiptFields BISTROT = new ReceiptFields("Le Bistrot", Category.RESTAURANT,
@@ -64,7 +66,7 @@ class ExpenseServiceTest {
     void l_enregistrement_conserve_l_original_et_planifie_le_traitement() {
         var id = UUID.randomUUID();
 
-        Expense e = service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        Expense e = service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
 
         assertThat(e.getStatus()).isEqualTo(ProcessingStatus.PENDING);
         assertThat(storage.read(id, e.getOriginalFile())).containsExactly(PHOTO);
@@ -74,9 +76,9 @@ class ExpenseServiceTest {
     @Test
     void l_enregistrement_est_idempotent_et_ne_touche_pas_l_original() {
         var id = UUID.randomUUID();
-        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
 
-        Expense again = service.register(id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null);
+        Expense again = service.register(OWNER, id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null);
 
         assertThat(storage.read(id, again.getOriginalFile())).containsExactly(PHOTO);
         assertThat(again.getFilter()).isEqualTo(ImageFilter.ENHANCE);
@@ -138,10 +140,10 @@ class ExpenseServiceTest {
     void une_correction_manuelle_n_est_pas_ecrasee_par_une_nouvelle_extraction() {
         var id = register();
         processor.process(id);
-        service.update(id, new ExpenseUpdate("Bistrot Corrigé", Category.RESTAURANT, LocalDate.of(2026, 3, 10),
+        service.update(OWNER, id, new ExpenseUpdate("Bistrot Corrigé", Category.RESTAURANT, LocalDate.of(2026, 3, 10),
                 new BigDecimal("45.00"), null, "EUR", "Paris", "FR", null, "CB", "Repas équipe"));
 
-        service.reprocess(id, ImageFilter.SCAN_BW, null);
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
         processor.process(id);
 
         Expense e = repository.findById(id).orElseThrow();
@@ -156,10 +158,10 @@ class ExpenseServiceTest {
     void les_coins_choisis_a_la_capture_sont_conserves_et_reutilises() {
         var id = UUID.randomUUID();
         var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
-        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, quad);
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, quad);
 
         processor.process(id);
-        service.reprocess(id, ImageFilter.SCAN_BW, null);
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
         processor.process(id);
 
         assertThat(repository.findById(id).orElseThrow().getCorners()).isEqualTo(quad.format());
@@ -171,7 +173,7 @@ class ExpenseServiceTest {
         var id = register();
         var quad = Quad.parse("0.2,0.2,0.8,0.2,0.8,0.8,0.2,0.8");
 
-        service.reprocess(id, null, quad);
+        service.reprocess(OWNER, id, null, quad);
         processor.process(id);
 
         Expense e = repository.findById(id).orElseThrow();
@@ -185,11 +187,77 @@ class ExpenseServiceTest {
         var id = register();
         Instant before = Instant.now().minusSeconds(1);
 
-        service.delete(id);
+        service.delete(OWNER, id);
 
         assertThat(repository.findById(id)).get().extracting(Expense::isDeleted).isEqualTo(true);
-        assertThat(service.changesSince(before)).extracting(Expense::getId).containsExactly(id);
-        assertThatThrownBy(() -> service.get(id)).isInstanceOf(ExpenseNotFoundException.class);
+        assertThat(service.changesSince(OWNER, before)).extracting(Expense::getId).containsExactly(id);
+        assertThatThrownBy(() -> service.get(OWNER, id)).isInstanceOf(ExpenseNotFoundException.class);
+    }
+
+    @Test
+    void la_depense_enregistree_appartient_au_compte_qui_l_envoie() {
+        var id = register();
+
+        assertThat(repository.findById(id)).get().extracting(Expense::getOwnerId).isEqualTo(OWNER);
+    }
+
+    @Test
+    void un_compte_ne_voit_pas_la_depense_d_un_autre() {
+        var id = register();
+
+        assertThatThrownBy(() -> service.get(STRANGER, id)).isInstanceOf(ExpenseNotFoundException.class);
+        assertThatThrownBy(() -> service.original(STRANGER, id)).isInstanceOf(ExpenseNotFoundException.class);
+    }
+
+    @Test
+    void un_compte_ne_telecharge_pas_l_image_traitee_d_un_autre() {
+        var id = register();
+        processor.process(id);
+
+        assertThatThrownBy(() -> service.processed(STRANGER, id)).isInstanceOf(ExpenseNotFoundException.class);
+    }
+
+    @Test
+    void un_compte_ne_modifie_ni_ne_retraite_la_depense_d_un_autre() {
+        var id = register();
+        var edit = new ExpenseUpdate("Pirate", null, null, null, null, null, null, null, null, null, null);
+
+        assertThatThrownBy(() -> service.update(STRANGER, id, edit)).isInstanceOf(ExpenseNotFoundException.class);
+        assertThatThrownBy(() -> service.reprocess(STRANGER, id, ImageFilter.NONE, null))
+                .isInstanceOf(ExpenseNotFoundException.class);
+        assertThat(repository.findById(id)).get().extracting(Expense::getMerchant).isNull();
+    }
+
+    @Test
+    void un_compte_ne_supprime_pas_la_depense_d_un_autre() {
+        var id = register();
+
+        assertThatThrownBy(() -> service.delete(STRANGER, id)).isInstanceOf(ExpenseNotFoundException.class);
+        assertThat(repository.findById(id)).get().extracting(Expense::isDeleted).isEqualTo(false);
+    }
+
+    @Test
+    void la_recherche_et_les_changements_ne_renvoient_que_les_depenses_du_compte() {
+        Instant before = Instant.now().minusSeconds(1);
+        var mine = register();
+        service.register(STRANGER, UUID.randomUUID(), PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        var all = new ExpenseSpecs.Criteria(null, null, null, null, null, null, null);
+
+        assertThat(service.search(OWNER, all)).extracting(Expense::getId).containsExactly(mine);
+        assertThat(service.changesSince(OWNER, before)).extracting(Expense::getId).containsExactly(mine);
+        assertThat(service.summary(OWNER, all, ExpenseSummary.GroupBy.CATEGORY))
+                .extracting(ExpenseSummary.Group::count).containsExactly(1L);
+    }
+
+    @Test
+    void un_identifiant_deja_pris_par_un_autre_compte_est_refuse_sans_toucher_a_sa_depense() {
+        var id = register();
+
+        assertThatThrownBy(() -> service.register(STRANGER, id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null))
+                .isInstanceOf(ExpenseNotFoundException.class);
+        Expense e = repository.findById(id).orElseThrow();
+        assertThat(e.getOwnerId()).isEqualTo(OWNER);
+        assertThat(storage.read(id, e.getOriginalFile())).containsExactly(PHOTO);
     }
 
     @Test
@@ -206,12 +274,12 @@ class ExpenseServiceTest {
 
     @Test
     void une_depense_inconnue_leve_une_erreur_explicite() {
-        assertThatThrownBy(() -> service.get(UUID.randomUUID())).isInstanceOf(ExpenseNotFoundException.class);
+        assertThatThrownBy(() -> service.get(OWNER, UUID.randomUUID())).isInstanceOf(ExpenseNotFoundException.class);
     }
 
     private UUID register() {
         var id = UUID.randomUUID();
-        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
         return id;
     }
 

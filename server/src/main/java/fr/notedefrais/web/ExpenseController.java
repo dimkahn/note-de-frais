@@ -31,7 +31,8 @@ public class ExpenseController {
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<ExpenseDto> upload(@RequestParam("file") MultipartFile file,
+    public ResponseEntity<ExpenseDto> upload(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId,
+                                             @RequestParam("file") MultipartFile file,
                                              @RequestParam(required = false) UUID id,
                                              @RequestParam(required = false) ImageFilter filter,
                                              @RequestParam(required = false) String corners) throws IOException {
@@ -40,74 +41,78 @@ public class ExpenseController {
         if (!ACCEPTED_TYPES.contains(type)) throw new UnsupportedImageTypeException(type);
 
         UUID expenseId = id == null ? UUID.randomUUID() : id;
-        Expense expense = service.register(expenseId, file.getBytes(), type, filter, parseCorners(corners));
+        Expense expense = service.register(ownerId, expenseId, file.getBytes(), type, filter, parseCorners(corners));
         return ResponseEntity.accepted()
                 .location(URI.create("/api/expenses/" + expenseId))
                 .body(ExpenseDto.of(expense));
     }
 
     @GetMapping
-    public List<ExpenseDto> search(@RequestParam(required = false) Category category,
+    public List<ExpenseDto> search(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId,
+                                   @RequestParam(required = false) Category category,
                                    @RequestParam(required = false) String city,
                                    @RequestParam(required = false) String country,
                                    @RequestParam(required = false) String merchant,
                                    @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                    @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                    @RequestParam(required = false) String q) {
-        return service.search(new Criteria(category, city, country, merchant, from, to, q)).stream()
+        return service.search(ownerId, new Criteria(category, city, country, merchant, from, to, q)).stream()
                 .map(ExpenseDto::of).toList();
     }
 
     @GetMapping("/summary")
-    public List<ExpenseSummary.Group> summary(@RequestParam ExpenseSummary.GroupBy groupBy,
+    public List<ExpenseSummary.Group> summary(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId,
+                                              @RequestParam ExpenseSummary.GroupBy groupBy,
                                               @RequestParam(required = false) Category category,
                                               @RequestParam(required = false) String city,
                                               @RequestParam(required = false) String country,
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
                                               @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
-        return service.summary(new Criteria(category, city, country, null, from, to, null), groupBy);
+        return service.summary(ownerId, new Criteria(category, city, country, null, from, to, null), groupBy);
     }
 
     /** Synchronisation : tout ce qui a changé depuis {@code since}, suppressions comprises. */
     @GetMapping("/changes")
-    public List<ExpenseDto> changes(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant since) {
-        return service.changesSince(since).stream().map(ExpenseDto::of).toList();
+    public List<ExpenseDto> changes(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId,
+                                    @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant since) {
+        return service.changesSince(ownerId, since).stream().map(ExpenseDto::of).toList();
     }
 
     @GetMapping("/{id}")
-    public ExpenseDto get(@PathVariable UUID id) {
-        return ExpenseDto.of(service.get(id));
+    public ExpenseDto get(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId, @PathVariable UUID id) {
+        return ExpenseDto.of(service.get(ownerId, id));
     }
 
     @PutMapping("/{id}")
-    public ExpenseDto update(@PathVariable UUID id, @Valid @RequestBody ExpenseUpdate update) {
-        return ExpenseDto.of(service.update(id, update));
+    public ExpenseDto update(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId, @PathVariable UUID id, @Valid @RequestBody ExpenseUpdate update) {
+        return ExpenseDto.of(service.update(ownerId, id, update));
     }
 
     @PostMapping("/{id}/reprocess")
-    public ResponseEntity<ExpenseDto> reprocess(@PathVariable UUID id,
+    public ResponseEntity<ExpenseDto> reprocess(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId,
+                                                @PathVariable UUID id,
                                                 @RequestParam(required = false) ImageFilter filter,
                                                 @RequestParam(required = false) String corners) {
-        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(id, filter, parseCorners(corners))));
+        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(ownerId, id, filter, parseCorners(corners))));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        service.delete(id);
+    public ResponseEntity<Void> delete(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId, @PathVariable UUID id) {
+        service.delete(ownerId, id);
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/original")
-    public ResponseEntity<byte[]> original(@PathVariable UUID id) {
-        String type = service.get(id).getOriginalContentType();
+    public ResponseEntity<byte[]> original(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId, @PathVariable UUID id) {
+        String type = service.get(ownerId, id).getOriginalContentType();
         return ResponseEntity.ok()
                 .contentType(type == null ? MediaType.APPLICATION_OCTET_STREAM : MediaType.parseMediaType(type))
-                .body(service.original(id));
+                .body(service.original(ownerId, id));
     }
 
     @GetMapping(value = "/{id}/processed", produces = MediaType.IMAGE_JPEG_VALUE)
-    public byte[] processed(@PathVariable UUID id) {
-        return service.processed(id);
+    public byte[] processed(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId, @PathVariable UUID id) {
+        return service.processed(ownerId, id);
     }
 
     private static Quad parseCorners(String corners) {

@@ -15,13 +15,20 @@ final class TestSessions {
     private TestSessions() {}
 
     static RequestPostProcessor signUp(MockMvc mvc) throws Exception {
+        return bearer(signUpToken(mvc));
+    }
+
+    static String signUpToken(MockMvc mvc) throws Exception {
         String body = mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"%s@example.com\",\"password\":\"correct horse battery\"}"
                                 .formatted(UUID.randomUUID())))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
-        String token = JsonPath.read(body, "$.token");
+        return JsonPath.read(body, "$.token");
+    }
+
+    static RequestPostProcessor bearer(String token) {
         return request -> {
             request.addHeader("Authorization", "Bearer " + token);
             return request;

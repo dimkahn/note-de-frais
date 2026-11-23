@@ -11,13 +11,16 @@ import java.util.UUID;
         @Index(name = "idx_expense_date", columnList = "expenseDate"),
         @Index(name = "idx_expense_category", columnList = "category"),
         @Index(name = "idx_expense_city", columnList = "city"),
-        @Index(name = "idx_expense_updated", columnList = "updatedAt")
+        @Index(name = "idx_expense_updated", columnList = "updatedAt"),
+        @Index(name = "idx_expense_owner", columnList = "ownerId")
 })
 public class Expense {
 
     /** Identifiant généré par le client : permet la synchronisation hors-ligne sans doublon. */
     @Id
     private UUID id;
+    /** Compte propriétaire ; null pour les données de développement antérieures aux comptes. */
+    private UUID ownerId;
 
     // --- Informations extraites (modifiables par l'utilisateur) ---
     private String merchant;
@@ -66,6 +69,11 @@ public class Expense {
 
     public Expense(UUID id) {
         this.id = id;
+    }
+
+    public Expense(UUID id, UUID ownerId) {
+        this.id = id;
+        this.ownerId = ownerId;
     }
 
     @PrePersist
@@ -128,6 +136,11 @@ public class Expense {
     // --- Accesseurs ---
 
     public UUID getId() { return id; }
+    public UUID getOwnerId() { return ownerId; }
+
+    public boolean isOwnedBy(UUID accountId) {
+        return ownerId != null && ownerId.equals(accountId);
+    }
     public String getMerchant() { return merchant; }
     public void setMerchant(String merchant) { this.merchant = merchant; }
     public Category getCategory() { return category; }

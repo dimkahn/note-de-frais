@@ -1,6 +1,7 @@
 package fr.notedefrais.expense;
 
 import java.time.LocalDate;
+import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 
 /** Critères de recherche combinables. */
@@ -10,6 +11,10 @@ public final class ExpenseSpecs {
 
     public record Criteria(Category category, String city, String country, String merchant,
                            LocalDate from, LocalDate to, String q) {}
+
+    public static Specification<Expense> ownedBy(UUID ownerId) {
+        return (root, query, cb) -> cb.equal(root.get("ownerId"), ownerId);
+    }
 
     public static Specification<Expense> matching(Criteria c) {
         return (root, query, cb) -> {

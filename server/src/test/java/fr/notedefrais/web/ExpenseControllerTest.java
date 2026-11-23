@@ -51,7 +51,7 @@ class ExpenseControllerTest {
     @Test
     void l_envoi_d_un_justificatif_repond_202_avec_la_depense_en_attente() throws Exception {
         var id = UUID.randomUUID();
-        given(service.register(eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW), eq(null))).willReturn(new Expense(id));
+        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW), eq(null))).willReturn(new Expense(id));
 
         mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1, 2}))
@@ -67,7 +67,7 @@ class ExpenseControllerTest {
     void transmet_les_coins_choisis_sur_l_appareil() throws Exception {
         var id = UUID.randomUUID();
         var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
-        given(service.register(eq(id), any(), eq("image/jpeg"), any(), eq(quad))).willReturn(new Expense(id));
+        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), any(), eq(quad))).willReturn(new Expense(id));
 
         mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
@@ -105,7 +105,7 @@ class ExpenseControllerTest {
         e.setAmountTotal(new BigDecimal("89.00"));
         e.setExpenseDate(LocalDate.of(2026, 3, 11));
         var criteria = new Criteria(Category.HOTEL, "Lyon", null, null, LocalDate.of(2026, 3, 1), null, null);
-        given(service.search(criteria)).willReturn(List.of(e));
+        given(service.search(OWNER, criteria)).willReturn(List.of(e));
 
         mvc.perform(get("/api/expenses").with(SESSION).param("category", "HOTEL").param("city", "Lyon").param("from", "2026-03-01"))
                 .andExpect(status().isOk())
@@ -116,7 +116,7 @@ class ExpenseControllerTest {
 
     @Test
     void synthese_par_critere() throws Exception {
-        given(service.summary(any(), eq(ExpenseSummary.GroupBy.CITY)))
+        given(service.summary(eq(OWNER), any(), eq(ExpenseSummary.GroupBy.CITY)))
                 .willReturn(List.of(new ExpenseSummary.Group("Lyon", 2, Map.of("EUR", new BigDecimal("100.00")))));
 
         mvc.perform(get("/api/expenses/summary").with(SESSION).param("groupBy", "CITY"))
@@ -129,7 +129,7 @@ class ExpenseControllerTest {
     @Test
     void une_depense_inconnue_repond_404() throws Exception {
         var id = UUID.randomUUID();
-        given(service.get(id)).willThrow(new ExpenseNotFoundException(id));
+        given(service.get(OWNER, id)).willThrow(new ExpenseNotFoundException(id));
 
         mvc.perform(get("/api/expenses/{id}", id).with(SESSION)).andExpect(status().isNotFound());
     }
@@ -145,28 +145,28 @@ class ExpenseControllerTest {
     @Test
     void la_modification_est_transmise_au_service() throws Exception {
         var id = UUID.randomUUID();
-        given(service.update(eq(id), any())).willReturn(new Expense(id));
+        given(service.update(eq(OWNER), eq(id), any())).willReturn(new Expense(id));
 
         mvc.perform(put("/api/expenses/{id}", id).with(SESSION)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"merchant\":\"Ibis\",\"category\":\"HOTEL\",\"amountTotal\":89.00,\"currency\":\"EUR\"}"))
                 .andExpect(status().isOk());
 
-        verify(service).update(eq(id), eq(new ExpenseUpdate("Ibis", Category.HOTEL, null,
+        verify(service).update(eq(OWNER), eq(id), eq(new ExpenseUpdate("Ibis", Category.HOTEL, null,
                 new BigDecimal("89.00"), null, "EUR", null, null, null, null, null)));
     }
 
     @Test
     void les_montants_peuvent_etre_envoyes_en_texte_decimal_exact() throws Exception {
         var id = UUID.randomUUID();
-        given(service.update(eq(id), any())).willReturn(new Expense(id));
+        given(service.update(eq(OWNER), eq(id), any())).willReturn(new Expense(id));
 
         mvc.perform(put("/api/expenses/{id}", id).with(SESSION)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amountTotal\":\"0.10\",\"expenseDate\":\"2026-03-10\"}"))
                 .andExpect(status().isOk());
 
-        verify(service).update(eq(id), eq(new ExpenseUpdate(null, null, LocalDate.of(2026, 3, 10),
+        verify(service).update(eq(OWNER), eq(id), eq(new ExpenseUpdate(null, null, LocalDate.of(2026, 3, 10),
                 new BigDecimal("0.10"), null, null, null, null, null, null, null)));
     }
 
@@ -175,8 +175,8 @@ class ExpenseControllerTest {
         var id = UUID.randomUUID();
         var e = new Expense(id);
         e.setOriginalContentType("image/png");
-        given(service.get(id)).willReturn(e);
-        given(service.original(id)).willReturn(new byte[]{7});
+        given(service.get(OWNER, id)).willReturn(e);
+        given(service.original(OWNER, id)).willReturn(new byte[]{7});
 
         mvc.perform(get("/api/expenses/{id}/original", id).with(SESSION))
                 .andExpect(status().isOk())
@@ -190,6 +190,6 @@ class ExpenseControllerTest {
 
         mvc.perform(delete("/api/expenses/{id}", id).with(SESSION)).andExpect(status().isNoContent());
 
-        verify(service).delete(id);
+        verify(service).delete(OWNER, id);
     }
 }
