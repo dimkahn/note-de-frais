@@ -30,6 +30,21 @@ String formatTotals(Map<String, String> totals) => totals.isEmpty
     ? '—'
     : totals.entries.map((t) => formatAmount(t.value, t.key)).join(' · ');
 
+/// Place de stockage à la française : « 42 Mo », « 1,5 Go ».
+String formatStorage(int bytes) {
+  const mo = 1024 * 1024;
+  if (bytes >= 1024 * mo) return '${_oneDecimal(bytes / (1024 * mo))} Go';
+  if (bytes < mo && bytes > 0) return '${_oneDecimal(bytes / mo)} Mo';
+  return '${(bytes / mo).round()} Mo';
+}
+
+/// « 1,5 » ; « 1 » plutôt que « 1,0 ».
+String _oneDecimal(double value) {
+  final text = value.toStringAsFixed(1);
+  return (text.endsWith('.0') ? text.substring(0, text.length - 2) : text)
+      .replaceFirst('.', ',');
+}
+
 enum BadgeTone { waiting, attention }
 
 typedef StatusBadge = ({String label, BadgeTone tone});
@@ -40,7 +55,11 @@ StatusBadge? statusBadge(Expense e, {required bool withServer}) {
   final failed =
       e.status == ProcessingStatus.failed ||
       e.status == ProcessingStatus.extractionFailed;
-  if (!withServer) {
+  // Sans analyse IA incluse, les valeurs viennent de l'appareil, comme sans serveur.
+  final analysedOnDevice =
+      e.status == ProcessingStatus.notIncluded &&
+      e.syncState == SyncState.synced;
+  if (!withServer || analysedOnDevice) {
     if (failed) return (label: e.status.label, tone: BadgeTone.attention);
     if (e.prefilled) return (label: 'À vérifier', tone: BadgeTone.waiting);
     return needsManualEntry(e)

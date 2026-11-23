@@ -202,6 +202,48 @@ void main() {
     expect(reprocess.url.queryParameters['corners'], Quad.inset(0.2).format());
   });
 
+  group('espace en ligne plein', () {
+    test('une capture refusée reste sur l\'appareil, en attente d\'envoi, et le rapport le signale', () async {
+      await captured('a');
+      server.quotaFull = true;
+
+      final report = await sync.sync();
+
+      expect((await store.get('a'))!.syncState, SyncState.pendingUpload);
+      expect(report.refusedForQuota, 1);
+      expect(report.errors, isEmpty);
+    });
+
+    test('les autres changements partent malgré le refus', () async {
+      await captured('a');
+      await captured('b');
+      await sync.sync();
+      final b = (await store.get('b'))!;
+      await store.save(
+        b.copyWith(merchant: 'Corrigé', syncState: SyncState.pendingUpdate),
+      );
+      await captured('c');
+      server.quotaFull = true;
+
+      await sync.sync();
+
+      expect((await store.get('b'))!.syncState, SyncState.synced);
+      expect((await store.get('c'))!.syncState, SyncState.pendingUpload);
+    });
+
+    test('la capture refusée part à une synchro suivante une fois de la place libérée', () async {
+      await captured('a');
+      server.quotaFull = true;
+      await sync.sync();
+      server.quotaFull = false;
+
+      final report = await sync.sync();
+
+      expect((await store.get('a'))!.syncState, SyncState.synced);
+      expect(report.refusedForQuota, 0);
+    });
+  });
+
   group('pré-remplissage sur l\'appareil', () {
     Future<void> prefill(String id) async {
       final e = (await store.get(id))!;
@@ -236,6 +278,24 @@ void main() {
 
       expect(server.requests.where((r) => r.method == 'PUT'), isEmpty);
     });
+
+    test(
+      'est conservé quand l\'analyse IA n\'est pas incluse dans l\'offre',
+      () async {
+        await captured('a');
+        await prefill('a');
+        await sync.sync();
+        server.processedWithoutAnalysis('a');
+
+        await sync.sync();
+
+        final e = (await store.get('a'))!;
+        expect(e.status, ProcessingStatus.notIncluded);
+        expect(e.merchant, 'Carrefour');
+        expect(e.amountTotal, '5.70');
+        expect(e.hasProcessedImage, isTrue);
+      },
+    );
 
     test('est remplacé par l\'analyse du serveur une fois terminée', () async {
       await captured('a');

@@ -14,6 +14,7 @@ final class SyncReport {
     this.errors = const [],
     this.offline = false,
     this.unauthorized = false,
+    this.refusedForQuota = 0,
   });
 
   final int pushed;
@@ -25,6 +26,9 @@ final class SyncReport {
 
   /// La session a été refusée : il faut se reconnecter ; les changements locaux attendent.
   final bool unauthorized;
+
+  /// Captures refusées faute d'espace en ligne : elles restent sur l'appareil, en attente d'envoi.
+  final int refusedForQuota;
 }
 
 /// Synchronisation rejouable : on pousse d'abord les changements locaux (la base locale fait foi
@@ -40,13 +44,15 @@ final class SyncService {
   static const _overlap = Duration(seconds: 1);
 
   Future<SyncReport> sync() async {
-    var pushed = 0, pulled = 0;
+    var pushed = 0, pulled = 0, refusedForQuota = 0;
     final errors = <String>[];
     try {
       for (final local in await _store.pendingSync()) {
         try {
           await _push(local);
           pushed++;
+        } on QuotaExceededException {
+          refusedForQuota++; // reste en attente d'envoi : retentée à la prochaine synchro
         } on ApiException catch (e) {
           errors.add('${local.id} : $e');
         }
@@ -58,6 +64,7 @@ final class SyncService {
         pulled: pulled,
         errors: errors,
         offline: true,
+        refusedForQuota: refusedForQuota,
       );
     } on UnauthorizedException {
       return SyncReport(
@@ -65,9 +72,15 @@ final class SyncService {
         pulled: pulled,
         errors: errors,
         unauthorized: true,
+        refusedForQuota: refusedForQuota,
       );
     }
-    return SyncReport(pushed: pushed, pulled: pulled, errors: errors);
+    return SyncReport(
+      pushed: pushed,
+      pulled: pulled,
+      errors: errors,
+      refusedForQuota: refusedForQuota,
+    );
   }
 
   Future<void> _push(Expense local) async {

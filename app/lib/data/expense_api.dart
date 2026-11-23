@@ -34,6 +34,19 @@ class ApiException implements Exception {
   String toString() => 'Erreur serveur $statusCode : $body';
 }
 
+/// Envoi refusé : l'espace en ligne de l'offre serait dépassé. Rien n'a été stocké sur le serveur.
+class QuotaExceededException extends ApiException {
+  QuotaExceededException(
+    super.statusCode,
+    super.body, {
+    required this.usedBytes,
+    required this.quotaBytes,
+  });
+
+  final int usedBytes;
+  final int quotaBytes;
+}
+
 /// Client de l'API REST `/api/expenses`.
 final class ExpenseApi {
   ExpenseApi({
@@ -160,10 +173,34 @@ final class ExpenseApi {
     }
     if (response.statusCode == 401) throw UnauthorizedException();
     if (response.statusCode == 404 && acceptNotFound) return response;
+    if (response.statusCode == 403) _throwIfQuotaExceeded(response);
     if (response.statusCode >= 300) {
       throw ApiException(response.statusCode, response.body);
     }
     return response;
+  }
+
+  static void _throwIfQuotaExceeded(http.Response response) {
+    final Object? body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      return;
+    }
+    if (body is! Map<String, Object?> || body['code'] != 'QUOTA_EXCEEDED') {
+      return;
+    }
+    // Corps inattendu : reste une ApiException ordinaire (levée par l'appelant).
+    if (body['usedBytes'] case final int used) {
+      if (body['quotaBytes'] case final int quota) {
+        throw QuotaExceededException(
+          response.statusCode,
+          response.body,
+          usedBytes: used,
+          quotaBytes: quota,
+        );
+      }
+    }
   }
 
   Object? _json(http.Response r) => jsonDecode(utf8.decode(r.bodyBytes));

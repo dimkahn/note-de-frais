@@ -18,6 +18,16 @@ void main() {
     expect(formatTotals({}), '—');
   });
 
+  test('formate une place de stockage en Mo, puis en Go au-delà de 1 Go', () {
+    const mo = 1024 * 1024;
+    expect(formatStorage(42 * mo), '42 Mo');
+    expect(formatStorage(100 * mo), '100 Mo');
+    expect(formatStorage(0), '0 Mo');
+    expect(formatStorage(300 * 1024), '0,3 Mo');
+    expect(formatStorage(1024 * mo), '1 Go');
+    expect(formatStorage(1536 * mo), '1,5 Go');
+  });
+
   group('statut affiché', () {
     final unsent = Expense.draft(
       id: 'a',
@@ -43,6 +53,30 @@ void main() {
         expect(statusBadge(done, withServer: true), isNull);
       },
     );
+
+    test('avec serveur, sans analyse IA incluse, une dépense lue sur l\'appareil est à vérifier', () {
+      final notIncluded = unsent.copyWith(
+        status: ProcessingStatus.notIncluded,
+        syncState: SyncState.synced,
+        amountTotal: '5.70',
+        prefilled: true,
+      );
+
+      expect(statusBadge(notIncluded, withServer: true), (
+        label: 'À vérifier',
+        tone: BadgeTone.waiting,
+      ));
+    });
+
+    test('avec serveur, sans analyse IA incluse, une dépense complétée n\'a rien à signaler', () {
+      final notIncluded = unsent.copyWith(
+        status: ProcessingStatus.notIncluded,
+        syncState: SyncState.synced,
+        amountTotal: '5.70',
+      );
+
+      expect(statusBadge(notIncluded, withServer: true), isNull);
+    });
 
     test('avec serveur, une extraction échouée est à compléter', () {
       final failed = unsent.copyWith(

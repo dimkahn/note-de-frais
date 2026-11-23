@@ -95,6 +95,33 @@ void main() {
     },
   );
 
+  test('après la connexion, l\'usage de l\'espace en ligne est lu', () async {
+    server.accounts['alice@example.com'] = password;
+    server.usedBytes = 4096;
+    final repo = await withServer();
+
+    await repo.login('alice@example.com', password);
+
+    expect(
+      repo.session!.account.usage,
+      StorageUsage(usedBytes: 4096, quotaBytes: server.quotaBytes),
+    );
+  });
+
+  test(
+    'un compte non relu (erreur du serveur) n\'empêche pas la connexion',
+    () async {
+      server.accounts['alice@example.com'] = password;
+      server.accountFails = true;
+      final repo = await withServer();
+
+      await repo.login('alice@example.com', password);
+
+      expect(repo.connected, isTrue);
+      expect(repo.session!.account.usage, isNull);
+    },
+  );
+
   test(
     'créer un compte connecte et garde la session dans le stockage sécurisé',
     () async {

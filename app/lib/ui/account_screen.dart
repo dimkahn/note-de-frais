@@ -5,7 +5,9 @@ import '../data/account_repository.dart';
 import '../data/auth_api.dart';
 import '../data/expense_api.dart';
 import '../data/expense_repository.dart';
+import '../data/sync_service.dart';
 import '../domain/account.dart';
+import 'format.dart';
 
 /// Se connecter à un compte existant, ou en créer un.
 enum SignInMode { signIn, register }
@@ -293,6 +295,8 @@ class _AccountSummary extends StatelessWidget {
         title: Text(account.email),
         subtitle: Text('Offre ${account.plan.label}'),
       ),
+      if (account.usage case final usage?) _StorageUsageBar(usage: usage),
+      if (account.plan == Plan.free) const _UpgradeOffer(),
       const SizedBox(height: 8),
       OutlinedButton.icon(
         icon: const Icon(Icons.logout),
@@ -307,6 +311,76 @@ class _AccountSummary extends StatelessWidget {
         ),
       ),
     ],
+  );
+}
+
+/// Place utilisée en ligne : « 42 Mo sur 100 Mo », en couleur d'alerte au-delà de 90 %.
+class _StorageUsageBar extends StatelessWidget {
+  const _StorageUsageBar({required this.usage});
+
+  final StorageUsage usage;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    final percent = '${(usage.fraction * 100).floor()} %';
+    final summary =
+        '${formatStorage(usage.usedBytes)} sur ${formatStorage(usage.quotaBytes)}';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Semantics(
+        label: 'Espace en ligne utilisé : $summary, $percent',
+        excludeSemantics: true,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(summary, style: text.bodyMedium)),
+                Text(percent, style: text.bodyMedium),
+              ],
+            ),
+            const SizedBox(height: 6),
+            LinearProgressIndicator(
+              value: usage.fraction,
+              minHeight: 8,
+              borderRadius: BorderRadius.circular(4),
+              color: usage.nearlyFull ? scheme.error : scheme.primary,
+              backgroundColor: scheme.surfaceContainerHighest,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Premium sera proposé avec le paiement ; en attendant, l'offre est attribuée à la main.
+class _UpgradeOffer extends StatelessWidget {
+  const _UpgradeOffer();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 4),
+    // Lu d'un seul tenant : « Passer à Premium, Bientôt disponible ».
+    child: MergeSemantics(
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: null,
+              child: Text('Passer à Premium'),
+            ),
+          ),
+          SizedBox(width: 12),
+          Chip(
+            label: Text('Bientôt disponible'),
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -357,6 +431,47 @@ class _SyncStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final report = context.watch<ExpenseRepository>().lastReport;
     if (report == null) return const SizedBox.shrink();
+    return Column(
+      children: [
+        if (report.refusedForQuota > 0)
+          _QuotaRefusal(count: report.refusedForQuota),
+        _SyncSummary(report: report),
+      ],
+    );
+  }
+}
+
+/// Envois refusés faute d'espace : les dépenses restent sur l'appareil et repartiront.
+class _QuotaRefusal extends StatelessWidget {
+  const _QuotaRefusal({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final error = Theme.of(context).colorScheme.error;
+    final remaining = count == 1
+        ? '1 dépense reste sur cet appareil'
+        : '$count dépenses restent sur cet appareil';
+    return ListTile(
+      leading: Icon(Icons.cloud_off_outlined, color: error),
+      title: Text('Espace en ligne plein', style: TextStyle(color: error)),
+      subtitle: Text(
+        '$remaining. ${count == 1 ? 'Elle sera envoyée' : 'Elles seront envoyées'} '
+        'à une prochaine synchronisation, une fois de la place libérée en ligne '
+        '(en supprimant des dépenses).',
+      ),
+    );
+  }
+}
+
+class _SyncSummary extends StatelessWidget {
+  const _SyncSummary({required this.report});
+
+  final SyncReport report;
+
+  @override
+  Widget build(BuildContext context) {
     return ListTile(
       leading: Icon(
         report.offline ? Icons.cloud_off_outlined : Icons.cloud_done_outlined,

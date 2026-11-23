@@ -6,6 +6,7 @@ import 'package:note_de_frais/data/account_repository.dart';
 import 'package:note_de_frais/data/expense_repository.dart';
 import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
+import 'package:note_de_frais/domain/expense.dart';
 import 'package:note_de_frais/ui/account_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -165,6 +166,119 @@ void main() {
       expect(server.requests, isEmpty);
     },
   );
+
+  group('offre et espace en ligne', () {
+    const mo = 1024 * 1024;
+
+    Future<void> signIn(WidgetTester tester) async {
+      server.accounts['alice@example.com'] = password;
+      await submit(
+        tester,
+        mode: 'Se connecter',
+        button: 'Se connecter',
+        email: 'alice@example.com',
+        password: password,
+      );
+    }
+
+    LinearProgressIndicator usageBar(WidgetTester tester) =>
+        tester.widget(find.byType(LinearProgressIndicator));
+
+    testWidgets('affiche la place utilisée sur celle de l\'offre', (
+      tester,
+    ) async {
+      await pumpAccount(tester);
+      server.usedBytes = 42 * mo;
+
+      await signIn(tester);
+
+      expect(find.text('42 Mo sur 100 Mo'), findsOneWidget);
+      expect(find.text('42 %'), findsOneWidget);
+      expect(usageBar(tester).value, closeTo(0.42, 0.001));
+      expect(
+        usageBar(tester).color,
+        isNot(
+          Theme.of(tester.element(find.byType(AccountScreen)))
+              .colorScheme
+              .error,
+        ),
+      );
+    });
+
+    testWidgets(
+      'au-delà de 90 %, la barre d\'usage passe en couleur d\'alerte',
+      (tester) async {
+        await pumpAccount(tester);
+        server.usedBytes = 95 * mo;
+
+        await signIn(tester);
+
+        expect(
+          usageBar(tester).color,
+          Theme.of(tester.element(find.byType(AccountScreen)))
+              .colorScheme
+              .error,
+        );
+      },
+    );
+
+    testWidgets(
+      'en Gratuit, « Passer à Premium » est visible mais bientôt disponible',
+      (tester) async {
+        await pumpAccount(tester);
+
+        await signIn(tester);
+
+        final upgrade = find.widgetWithText(OutlinedButton, 'Passer à Premium');
+        expect(upgrade, findsOneWidget);
+        expect(tester.widget<OutlinedButton>(upgrade).onPressed, isNull);
+        expect(find.text('Bientôt disponible'), findsOneWidget);
+      },
+    );
+
+    testWidgets('en Premium, « Passer à Premium » n\'est pas proposé', (
+      tester,
+    ) async {
+      await pumpAccount(tester);
+      server.premium.add('alice@example.com');
+
+      await signIn(tester);
+
+      expect(find.text('Offre Premium'), findsOneWidget);
+      expect(find.text('Passer à Premium'), findsNothing);
+    });
+
+    testWidgets(
+      'une dépense refusée faute d\'espace est signalée comme restée sur l\'appareil',
+      (tester) async {
+        await pumpAccount(tester);
+        server.quotaFull = true;
+        server.accounts['alice@example.com'] = password;
+
+        // Capture, connexion et synchro en temps réel (base et fichier de la capture).
+        await tester.runAsync(() async {
+          final photo = File('${Directory.systemTemp.path}/ndf_quota.jpg');
+          await photo.writeAsBytes([1, 2, 3]);
+          await store.save(
+            Expense.draft(
+              id: 'quota',
+              originalPath: photo.path,
+              filter: ImageFilter.enhance,
+            ),
+          );
+          await account.login('alice@example.com', password);
+          await expenses.sync();
+        });
+        await tester.pump();
+
+        expect(find.textContaining('Espace en ligne plein'), findsOneWidget);
+        expect(
+          find.textContaining('1 dépense reste sur cet appareil'),
+          findsOneWidget,
+        );
+      },
+    );
+  });
 
   testWidgets('des identifiants refusés affichent un message clair', (
     tester,

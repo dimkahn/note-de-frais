@@ -202,6 +202,27 @@ void main() {
     });
   });
 
+  testWidgets(
+    'sans analyse IA incluse, la fiche le signale et garde les valeurs lues sur l\'appareil',
+    (tester) async {
+      await pumpHome(tester, [
+        expense(
+          'n',
+          'Carrefour',
+          ExpenseCategory.fournitures,
+          'Lyon',
+          '5.70',
+        ).copyWith(status: ProcessingStatus.notIncluded, prefilled: true),
+      ]);
+
+      await tester.tap(find.text('Carrefour'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Analyse IA incluse avec Premium'), findsOneWidget);
+      expect(find.textContaining('Lu automatiquement'), findsOneWidget);
+    },
+  );
+
   testWidgets('exporte le justificatif d\'une dépense en PDF', (tester) async {
     late String processed;
     await tester.runAsync(() async {

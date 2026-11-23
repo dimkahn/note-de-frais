@@ -49,6 +49,15 @@ void main() {
       expect(e.amountTotal, '0.10');
     });
 
+    test('reconnaît une analyse IA non incluse dans l\'offre', () {
+      final e = Expense.fromServerJson({
+        ...serverJson,
+        'status': 'NOT_INCLUDED',
+      });
+
+      expect(e.status.code, 'NOT_INCLUDED');
+    });
+
     test('une catégorie inconnue devient AUTRE', () {
       final e = Expense.fromServerJson({...serverJson, 'category': 'NOUVELLE'});
 

@@ -48,6 +48,10 @@ enum ProcessingStatus {
   pending('PENDING', 'Traitement en cours'),
   done('DONE', 'Traité'),
   extractionFailed('EXTRACTION_FAILED', 'À compléter'),
+
+  /// Image traitée par le serveur, sans analyse IA (offre Gratuite) : les valeurs lues sur
+  /// l'appareil ou saisies à la main font foi.
+  notIncluded('NOT_INCLUDED', 'Analyse IA non incluse'),
   failed('FAILED', 'Échec du traitement');
 
   const ProcessingStatus(this.code, this.label);

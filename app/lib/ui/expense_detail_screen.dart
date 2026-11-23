@@ -252,6 +252,18 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                   subtitle: Text(e.processingError!),
                 ),
               ),
+            if (e.status == ProcessingStatus.notIncluded)
+              const Card.outlined(
+                margin: EdgeInsets.only(bottom: 16),
+                child: ListTile(
+                  leading: Icon(Icons.auto_awesome_outlined),
+                  title: Text('Analyse IA incluse avec Premium'),
+                  subtitle: Text(
+                    'Le justificatif est recadré et sauvegardé en ligne ; '
+                    'les informations restent celles lues sur l\'appareil ou saisies.',
+                  ),
+                ),
+              ),
             if (e.prefilled && !e.userEdited)
               const Card.outlined(
                 margin: EdgeInsets.only(bottom: 16),

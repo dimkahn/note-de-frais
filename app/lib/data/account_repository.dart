@@ -167,7 +167,8 @@ class AccountRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Relit le compte sur le serveur (offre à jour) ; une session refusée déconnecte.
+  /// Relit le compte sur le serveur (offre, usage et quota à jour) ; une session refusée
+  /// déconnecte, une autre erreur laisse le compte tel quel.
   Future<void> refresh() async {
     final current = _session;
     if (current == null || !settings.isConfigured) return;
@@ -178,6 +179,8 @@ class AccountRepository extends ChangeNotifier {
       await expire();
     } on OfflineException catch (e) {
       debugPrint('Compte non rafraîchi (hors-ligne) : $e');
+    } on ApiException catch (e) {
+      debugPrint('Compte non rafraîchi : $e');
     }
   }
 
@@ -195,6 +198,7 @@ class AccountRepository extends ChangeNotifier {
       );
     }
     await _keep(await authenticate());
+    await refresh(); // usage et quota, absents de la réponse de connexion
   }
 
   Future<void> _keep(Session session) async {

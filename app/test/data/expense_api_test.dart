@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:note_de_frais/data/expense_api.dart';
+import 'package:note_de_frais/domain/expense.dart';
 
 ExpenseApi _api(
   MockClientHandler handler, {
@@ -74,6 +75,54 @@ void main() {
       final api = _api((_) async => http.Response('', 404));
 
       await expectLater(api.delete('abc'), completes);
+    },
+  );
+
+  test('un envoi refusé pour quota devient une QuotaExceededException avec l\'usage et le quota', () async {
+    final api = _api(
+      (_) async => http.Response(
+        '{"status":403,"code":"QUOTA_EXCEEDED","usedBytes":104000000,"quotaBytes":104857600}',
+        403,
+        headers: {'content-type': 'application/problem+json'},
+      ),
+    );
+
+    expect(
+      api.upload(const Expense(id: 'a'), [1, 2, 3], 'image/jpeg'),
+      throwsA(
+        isA<QuotaExceededException>()
+            .having((e) => e.usedBytes, 'usedBytes', 104000000)
+            .having((e) => e.quotaBytes, 'quotaBytes', 104857600),
+      ),
+    );
+  });
+
+  test('un autre refus 403 reste une ApiException ordinaire', () async {
+    final api = _api((_) async => http.Response('{"status":403}', 403));
+
+    expect(
+      api.upload(const Expense(id: 'a'), [1], 'image/jpeg'),
+      throwsA(isNot(isA<QuotaExceededException>())),
+    );
+  });
+
+  test(
+    'un refus pour quota sans usage lisible reste une ApiException ordinaire',
+    () async {
+      final api = _api(
+        (_) async => http.Response('{"code":"QUOTA_EXCEEDED"}', 403),
+      );
+
+      expect(
+        api.upload(const Expense(id: 'a'), [1], 'image/jpeg'),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e is QuotaExceededException,
+            'quota',
+            isFalse,
+          ),
+        ),
+      );
     },
   );
 }

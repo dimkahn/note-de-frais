@@ -25,6 +25,14 @@ class FakeServer {
   final sessions = <String>{'jeton'};
   final premium = <String>{};
 
+  /// Usage rapporté par `GET /api/account` ; espace plein → envois refusés (403 QUOTA_EXCEEDED).
+  var usedBytes = 0;
+  var quotaBytes = 100 * 1024 * 1024;
+  var quotaFull = false;
+
+  /// `GET /api/account` en erreur 500.
+  var accountFails = false;
+
   /// Clés d'appareil valides (clé → e-mail du compte).
   final deviceKeys = <String, String>{};
   var _issued = 0;
@@ -46,7 +54,16 @@ class FakeServer {
       sessions.remove(token);
       return http.Response('', 204);
     }
-    if (path == '/api/account') return _ok(_account(_emailOf(token!)));
+    if (path == '/api/account') {
+      if (accountFails) return http.Response('boom', 500);
+      final email = _emailOf(token!);
+      return _ok({
+        ..._account(email),
+        'usedBytes': usedBytes,
+        'quotaBytes': quotaBytes,
+        'aiAnalysis': premium.contains(email),
+      });
+    }
     if (path == '/api/auth/devices') {
       final deviceKey = 'cle-${++_issued}';
       deviceKeys[deviceKey] = _emailOf(token!);
@@ -60,6 +77,14 @@ class FakeServer {
     final id = path.split('/').length > 3 ? path.split('/')[3] : null;
 
     if (request.method == 'POST' && path == '/api/expenses') {
+      if (quotaFull) {
+        return _ok({
+          'status': 403,
+          'code': 'QUOTA_EXCEEDED',
+          'usedBytes': quotaBytes,
+          'quotaBytes': quotaBytes,
+        }, 403);
+      }
       final body = utf8.decode(request.bodyBytes, allowMalformed: true);
       final uploadedId = RegExp(r'name="id"\r\n\r\n([^\r]+)')
           .firstMatch(body)!
@@ -147,6 +172,14 @@ class FakeServer {
       'merchant': merchant,
       'amountTotal': 42.5,
       'currency': 'EUR',
+      'updatedAt': '2026-03-10T12:05:00Z',
+    };
+  }
+
+  /// Rendu produit sans analyse IA (offre Gratuite).
+  void processedWithoutAnalysis(String id) {
+    expenses[id] = {
+      ..._json(id, status: 'NOT_INCLUDED', processed: true),
       'updatedAt': '2026-03-10T12:05:00Z',
     };
   }

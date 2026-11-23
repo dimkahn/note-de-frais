@@ -191,8 +191,15 @@ class ExpenseRepository extends ChangeNotifier {
       _running = null;
       _notify();
     }
+    final report = _lastReport!;
     // Données locales conservées : elles repartiront à la prochaine connexion.
-    if (_lastReport!.unauthorized) await _account.expire();
+    if (report.unauthorized) await _account.expire();
+    // L'usage de l'espace en ligne a changé (ou l'espace est plein) : la page Compte le reflète.
+    if (!report.offline &&
+        !report.unauthorized &&
+        (report.pushed > 0 || report.refusedForQuota > 0)) {
+      await _account.refresh();
+    }
     _schedulePollIfProcessing();
     return _lastReport;
   }
@@ -213,8 +220,13 @@ class ExpenseRepository extends ChangeNotifier {
     _poll?.cancel();
     final interval = pollInterval;
     if (interval == null || _disposed) return;
+    // Seules les dépenses déjà reçues par le serveur sont en cours de traitement ; une capture
+    // non envoyée (refusée faute d'espace…) attend la prochaine synchro, sans boucle.
     final waiting = _all.any(
-      (e) => !e.deleted && e.status == ProcessingStatus.pending,
+      (e) =>
+          !e.deleted &&
+          e.status == ProcessingStatus.pending &&
+          e.syncState == SyncState.synced,
     );
     if (waiting && !(_lastReport?.offline ?? false)) {
       _poll = Timer(interval, sync);

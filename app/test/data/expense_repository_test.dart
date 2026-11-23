@@ -260,6 +260,62 @@ void main() {
     );
   });
 
+  group('offre et espace en ligne', () {
+    test(
+      'après un envoi, l\'usage du compte est relu sur le serveur',
+      () async {
+        server.usedBytes = 1234;
+
+        await scan(ImageFilter.enhance);
+        await pumpEventQueue();
+
+        expect(account.session!.account.usage?.usedBytes, 1234);
+      },
+    );
+
+    test(
+      'après un refus faute d\'espace, l\'usage du compte est relu',
+      () async {
+        server.quotaFull = true;
+        server.usedBytes = server.quotaBytes;
+
+        await scan(ImageFilter.enhance);
+
+        expect(account.session!.account.usage?.fraction, 1);
+      },
+    );
+
+    test(
+      'une capture refusée faute d\'espace n\'est pas renvoyée en boucle',
+      () async {
+        final polling = ExpenseRepository(
+          store: store,
+          files: FileStore(dir),
+          httpClient: server.client,
+          account: account,
+          pollInterval: const Duration(milliseconds: 5),
+        );
+        await polling.load();
+        server.quotaFull = true;
+
+        await polling.captureScan(
+          photo(),
+          Quad.inset(0.1),
+          ImageFilter.enhance,
+          processedJpeg: [5],
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+
+        final uploads = server.requests.where(
+          (r) => r.method == 'POST' && r.url.path == '/api/expenses',
+        );
+        expect(uploads, hasLength(1));
+        expect(polling.lastReport!.refusedForQuota, 1);
+        polling.dispose();
+      },
+    );
+  });
+
   group('lecture du justificatif sur l\'appareil', () {
     const ticket = 'CARREFOUR MARKET\n14/03/2026\nTOTAL TTC 5,70 €';
 
