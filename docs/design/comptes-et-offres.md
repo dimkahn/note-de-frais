@@ -91,6 +91,23 @@ l'app garde les valeurs lues sur l'appareil.
 - Restent ouverts : rattachement des dépenses d'avant les comptes (sans propriétaire, invisibles) ;
   pas d'adresse de serveur par défaut dans l'app (à saisir dans « Avancé »).
 
+## Décisions prises en phase 1b (connexion par empreinte)
+
+- Révoquer une clé = supprimer sa ligne `device_key`. Révoquer la clé d'un autre compte est sans
+  effet (204, ne révèle rien). Les clés n'expirent pas : seule la révocation les invalide.
+- L'activation demande d'abord une empreinte reconnue (on vérifie que la biométrie fonctionne avant
+  d'émettre la clé). Une session refusée (401) à l'activation déconnecte, comme ailleurs.
+- La désactivation lit la clé **sans** empreinte : elle ne sert qu'à la révoquer, puis est effacée ;
+  l'effacement local a lieu même si la révocation échoue (hors-ligne).
+- Libellé de l'appareil envoyé au serveur : le système (`android`, `ios`…).
+- « Biométrie disponible » = capteur présent **et** au moins une biométrie enregistrée, évalué au
+  lancement de l'app ; sinon (desktop, émulateur, rien d'enregistré) l'option n'est pas proposée.
+- iOS : `NSFaceIDUsageDescription` ajouté (Face ID compte comme biométrie).
+- Restent ouverts : la clé reste liée au compte qui l'a activée (après une connexion par mot de passe
+  à un autre compte, l'empreinte reconnecte toujours au premier ; « Désactiver » l'efface sans pouvoir
+  la révoquer) ; une clé non révoquée (désactivation hors-ligne) reste valide sur le serveur — une
+  liste des appareils avec révocation dans la page Compte réglerait les deux.
+
 ## Plan de tests (ordre)
 
 Serveur : hash et vérification du mot de passe ; inscription (201, 409, 400) ; connexion (200, 401) ;
