@@ -281,6 +281,87 @@ class AccountServiceTest {
                 .hasMessageContaining("PREMIUM");
     }
 
+    @Test
+    void la_connexion_google_d_un_inconnu_cree_un_compte_gratuit_sans_mot_de_passe() {
+        Authentication auth = service.googleLogin(new GoogleIdentity("sub-alice", "Alice@Gmail.com", true));
+
+        Account created = accounts.findById(auth.account().getId()).orElseThrow();
+        assertThat(created.getEmail()).isEqualTo("alice@gmail.com");
+        assertThat(created.getPlan()).isEqualTo(Plan.FREE);
+        assertThat(created.getPasswordHash()).isNull();
+        assertThat(created.getGoogleSubject()).isEqualTo("sub-alice");
+        assertThat(service.authenticate(auth.token())).contains(created.getId());
+    }
+
+    @Test
+    void la_connexion_google_retrouve_le_compte_par_son_identifiant_google_meme_si_l_e_mail_a_change() {
+        var alice = service.googleLogin(new GoogleIdentity("sub-alice", "alice@gmail.com", true)).account();
+
+        Authentication auth = service.googleLogin(new GoogleIdentity("sub-alice", "alice.nouvelle@gmail.com", false));
+
+        assertThat(auth.account().getId()).isEqualTo(alice.getId());
+        assertThat(accounts.count()).isEqualTo(1);
+    }
+
+    @Test
+    void la_connexion_google_lie_le_compte_e_mail_existant_quand_l_e_mail_google_est_verifie() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+
+        Authentication auth = service.googleLogin(new GoogleIdentity("sub-alice", "Alice@example.com", true));
+
+        assertThat(auth.account().getId()).isEqualTo(alice.getId());
+        assertThat(accounts.findById(alice.getId()).orElseThrow().getGoogleSubject()).isEqualTo("sub-alice");
+        assertThat(service.authenticate(auth.token())).contains(alice.getId());
+    }
+
+    /** L'inscription ne vérifie pas l'e-mail : un compte pré-créé par un tiers ne doit pas lui rester accessible. */
+    @Test
+    void la_liaison_a_google_retire_le_mot_de_passe_les_sessions_et_les_cles_d_appareil_anterieures() {
+        var registered = service.register("alice@example.com", PASSWORD);
+        String deviceKey = service.registerDevice(registered.account().getId(), "Pixel 8");
+
+        service.googleLogin(new GoogleIdentity("sub-alice", "alice@example.com", true));
+
+        assertThatThrownBy(() -> service.login("alice@example.com", PASSWORD))
+                .isInstanceOf(PasswordNotSetException.class);
+        assertThat(service.authenticate(registered.token())).isEmpty();
+        assertThatThrownBy(() -> service.deviceLogin(deviceKey)).isInstanceOf(InvalidDeviceKeyException.class);
+    }
+
+    @Test
+    void refuse_la_connexion_google_dont_l_e_mail_non_verifie_correspond_a_un_compte_existant() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+
+        assertThatThrownBy(() -> service.googleLogin(new GoogleIdentity("sub-intrus", "alice@example.com", false)))
+                .isInstanceOf(GoogleAccountRefusedException.class);
+        assertThat(accounts.findById(alice.getId()).orElseThrow().getGoogleSubject()).isNull();
+    }
+
+    @Test
+    void refuse_de_creer_un_compte_google_avec_un_e_mail_non_verifie() {
+        assertThatThrownBy(() -> service.googleLogin(new GoogleIdentity("sub-bob", "bob@example.com", false)))
+                .isInstanceOf(GoogleAccountRefusedException.class);
+        assertThat(accounts.count()).isZero();
+    }
+
+    @Test
+    void refuse_de_lier_un_compte_deja_lie_a_un_autre_compte_google() {
+        var alice = service.googleLogin(new GoogleIdentity("sub-alice", "alice@gmail.com", true)).account();
+
+        assertThatThrownBy(() -> service.googleLogin(new GoogleIdentity("sub-autre", "alice@gmail.com", true)))
+                .isInstanceOf(GoogleAccountRefusedException.class);
+        assertThat(accounts.findById(alice.getId()).orElseThrow().getGoogleSubject()).isEqualTo("sub-alice");
+    }
+
+    @Test
+    void un_compte_cree_par_google_ne_se_connecte_pas_par_mot_de_passe_et_l_explique() {
+        service.googleLogin(new GoogleIdentity("sub-alice", "alice@gmail.com", true));
+
+        assertThatThrownBy(() -> service.login("alice@gmail.com", PASSWORD))
+                .isInstanceOf(PasswordNotSetException.class)
+                .hasMessageContaining("Google");
+    }
+
     private AccountService serviceAt(Instant now) {
         return new AccountService(accounts, sessions, devices, encoder, Clock.fixed(now, ZoneOffset.UTC), TTL,
                 Map.of(Plan.FREE, FREE_LIMITS, Plan.PREMIUM, PREMIUM_LIMITS));

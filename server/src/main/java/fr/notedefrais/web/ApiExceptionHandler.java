@@ -2,9 +2,13 @@ package fr.notedefrais.web;
 
 import fr.notedefrais.account.AccountNotFoundException;
 import fr.notedefrais.account.EmailAlreadyUsedException;
+import fr.notedefrais.account.GoogleAccountRefusedException;
+import fr.notedefrais.account.GoogleSignInUnavailableException;
 import fr.notedefrais.account.InvalidCredentialsException;
 import fr.notedefrais.account.InvalidDeviceKeyException;
+import fr.notedefrais.account.InvalidGoogleTokenException;
 import fr.notedefrais.account.InvalidPasswordException;
+import fr.notedefrais.account.PasswordNotSetException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
 import fr.notedefrais.expense.QuotaExceededException;
 import fr.notedefrais.imaging.InvalidQuadException;
@@ -81,6 +85,31 @@ public class ApiExceptionHandler {
     @ExceptionHandler(InvalidDeviceKeyException.class)
     ProblemDetail invalidDeviceKey(InvalidDeviceKeyException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    /** {@code code} permet à l'app de proposer la connexion Google. */
+    @ExceptionHandler(PasswordNotSetException.class)
+    ProblemDetail passwordNotSet(PasswordNotSetException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+        problem.setProperty("code", "PASSWORD_NOT_SET");
+        return problem;
+    }
+
+    @ExceptionHandler(InvalidGoogleTokenException.class)
+    ProblemDetail invalidGoogleToken(InvalidGoogleTokenException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    @ExceptionHandler(GoogleAccountRefusedException.class)
+    ProblemDetail googleAccountRefused(GoogleAccountRefusedException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, e.getMessage());
+    }
+
+    /** Non configurée, ou Google injoignable (cause journalisée, jamais le jeton). */
+    @ExceptionHandler(GoogleSignInUnavailableException.class)
+    ProblemDetail googleSignInUnavailable(GoogleSignInUnavailableException e) {
+        if (e.getCause() != null) log.warn("Vérification Google impossible", e.getCause());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
     }
 
     @ExceptionHandler(StorageException.class)

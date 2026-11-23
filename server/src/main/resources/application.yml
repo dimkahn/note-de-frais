@@ -13,6 +13,9 @@ app:
     premium:
       quota: 1GB
       ai-analysis: true
+  # Connexion Google : identifiant client OAuth « web » (…apps.googleusercontent.com) ; vide = connexion Google fermée (503)
+  google:
+    client-id: ${NDF_GOOGLE_CLIENT_ID:}
   claude:
     enabled: ${NDF_CLAUDE_ENABLED:true}
     model: ${NDF_CLAUDE_MODEL:claude-opus-5-5}

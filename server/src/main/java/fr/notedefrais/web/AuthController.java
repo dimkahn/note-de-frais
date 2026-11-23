@@ -1,6 +1,7 @@
 package fr.notedefrais.web;
 
 import fr.notedefrais.account.AccountService;
+import fr.notedefrais.account.GoogleIdentityVerifier;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,9 +13,11 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
 
     private final AccountService service;
+    private final GoogleIdentityVerifier google;
 
-    public AuthController(AccountService service) {
+    public AuthController(AccountService service, GoogleIdentityVerifier google) {
         this.service = service;
+        this.google = google;
     }
 
     @PostMapping("/register")
@@ -26,6 +29,12 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody Credentials.Login body) {
         return AuthResponse.of(service.login(body.email(), body.password()));
+    }
+
+    /** Vérification du jeton auprès de Google hors transaction, puis connexion (ou liaison, ou création). */
+    @PostMapping("/google")
+    public AuthResponse google(@Valid @RequestBody Credentials.Google body) {
+        return AuthResponse.of(service.googleLogin(google.verify(body.idToken())));
     }
 
     @PostMapping("/logout")

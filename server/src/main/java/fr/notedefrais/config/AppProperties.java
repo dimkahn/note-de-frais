@@ -14,10 +14,11 @@ import org.springframework.util.unit.DataSize;
  * @param sessionTtl durée de validité d'une session ouverte par une connexion
  * @param claude     configuration de l'extraction
  * @param plans      ce que permet chaque offre
+ * @param google     connexion Google
  */
 @ConfigurationProperties(prefix = "app")
 public record AppProperties(String storageDir, String apiToken, Duration sessionTtl, Claude claude,
-                            Map<Plan, Offer> plans) {
+                            Map<Plan, Offer> plans, Google google) {
 
     /**
      * @param quota      espace de stockage en ligne (ex. {@code 100MB})
@@ -29,6 +30,16 @@ public record AppProperties(String storageDir, String apiToken, Duration session
         if (plans == null) throw new IllegalStateException("Offres non configurées (app.plans)");
         return plans.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey,
                 e -> new PlanLimits(e.getValue().quota().toBytes(), e.getValue().aiAnalysis())));
+    }
+
+    /**
+     * @param clientId identifiant client OAuth « web » attendu dans les jetons Google ; vide = connexion Google fermée
+     */
+    public record Google(String clientId) {
+
+        public boolean enabled() {
+            return clientId != null && !clientId.isBlank();
+        }
     }
 
     /**

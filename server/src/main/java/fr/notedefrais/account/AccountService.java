@@ -63,10 +63,42 @@ public class AccountService implements AccountLimits {
     @Transactional
     public Authentication login(String email, String password) {
         Optional<Account> account = accounts.findByEmail(normalize(email));
+        if (account.isPresent() && account.get().getPasswordHash() == null) throw new PasswordNotSetException();
         String hash = account.map(Account::getPasswordHash).orElse(decoyHash);
-        boolean matches = hash != null && passwordEncoder.matches(password, hash);
-        if (account.isEmpty() || !matches) throw new InvalidCredentialsException();
+        if (account.isEmpty() || !passwordEncoder.matches(password, hash)) throw new InvalidCredentialsException();
         return new Authentication(openSession(account.get()), account.get());
+    }
+
+    /**
+     * Connexion par une identité Google déjà vérifiée : le compte lié à cet identifiant Google ;
+     * sinon le compte de même e-mail, lié au passage ; sinon un nouveau compte sans mot de passe.
+     * Un e-mail que Google ne certifie pas n'ouvre ni ne lie aucun compte.
+     */
+    @Transactional
+    public Authentication googleLogin(GoogleIdentity identity) {
+        Account account = accounts.findByGoogleSubject(identity.subject())
+                .orElseGet(() -> linkOrCreate(identity));
+        return new Authentication(openSession(account), account);
+    }
+
+    private Account linkOrCreate(GoogleIdentity identity) {
+        if (!identity.emailVerified() || identity.email() == null) {
+            throw new GoogleAccountRefusedException(
+                    "Adresse e-mail Google non vérifiée : connectez-vous avec votre e-mail et votre mot de passe");
+        }
+        String email = normalize(identity.email());
+        Optional<Account> existing = accounts.findByEmail(email);
+        if (existing.isEmpty()) return accounts.save(Account.fromGoogle(email, identity.subject()));
+        Account account = existing.get();
+        if (account.getGoogleSubject() != null) {
+            throw new GoogleAccountRefusedException("Ce compte est déjà lié à un autre compte Google");
+        }
+        // L'inscription ne prouve pas la possession de l'e-mail : un tiers a pu créer ce compte avant
+        // son titulaire. La liaison lui en retire l'accès (mot de passe, sessions, clés d'appareil).
+        account.linkGoogle(identity.subject());
+        sessions.deleteByAccountId(account.getId());
+        devices.deleteByAccountId(account.getId());
+        return accounts.save(account);
     }
 
     @Transactional

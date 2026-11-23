@@ -2,11 +2,15 @@ package fr.notedefrais.config;
 
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.google.api.client.http.javanet.NetHttpTransport;
 import fr.notedefrais.account.AccountRepository;
 import fr.notedefrais.account.AccountService;
 import fr.notedefrais.account.DeviceKeyRepository;
+import fr.notedefrais.account.GoogleIdentityVerifier;
 import fr.notedefrais.account.SessionRepository;
 import fr.notedefrais.extraction.ClaudeReceiptExtractor;
+import fr.notedefrais.google.DisabledGoogleIdentityVerifier;
+import fr.notedefrais.google.GoogleIdTokenIdentityVerifier;
 import fr.notedefrais.extraction.DisabledReceiptExtractor;
 import fr.notedefrais.extraction.ReceiptExtractor;
 import fr.notedefrais.imaging.ImageProcessor;
@@ -34,6 +38,14 @@ public class InfrastructureConfig {
                                   AppProperties props) {
         return new AccountService(accounts, sessions, devices, new BCryptPasswordEncoder(), Clock.systemUTC(),
                 props.sessionTtl(), props.planLimits());
+    }
+
+    @Bean
+    GoogleIdentityVerifier googleIdentityVerifier(AppProperties props) {
+        AppProperties.Google google = props.google();
+        return google != null && google.enabled()
+                ? new GoogleIdTokenIdentityVerifier(google.clientId().strip(), new NetHttpTransport())
+                : new DisabledGoogleIdentityVerifier();
     }
 
     @Bean

@@ -33,6 +33,8 @@ class AuthControllerTest {
     AccountService service;
     @MockitoBean
     ExpenseService expenses;
+    @MockitoBean
+    GoogleIdentityVerifier google;
 
     @Test
     void l_inscription_repond_201_avec_le_jeton_et_le_compte() throws Exception {
@@ -189,6 +191,81 @@ class AuthControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(service).revokeDevice(accountId, "cle-appareil");
+    }
+
+    @Test
+    void la_connexion_google_repond_200_avec_le_jeton_et_le_compte_sans_session_prealable() throws Exception {
+        var identity = new GoogleIdentity("sub-alice", "alice@gmail.com", true);
+        given(google.verify("jeton-google")).willReturn(identity);
+        given(service.googleLogin(identity))
+                .willReturn(new Authentication("jeton", TestAccounts.free("alice@gmail.com")));
+
+        mvc.perform(googleLogin("jeton-google"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("jeton"))
+                .andExpect(jsonPath("$.account.email").value("alice@gmail.com"))
+                .andExpect(jsonPath("$.account.plan").value("FREE"));
+    }
+
+    @Test
+    void un_jeton_google_refuse_repond_401_sans_toucher_aux_comptes() throws Exception {
+        given(google.verify(any())).willThrow(new InvalidGoogleTokenException());
+
+        mvc.perform(googleLogin("falsifie"))
+                .andExpect(status().isUnauthorized());
+
+        verify(service, never()).googleLogin(any());
+    }
+
+    @Test
+    void la_connexion_google_exige_un_jeton() throws Exception {
+        mvc.perform(googleLogin(" "))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(google);
+    }
+
+    @Test
+    void la_connexion_google_refuse_un_jeton_demesure_sans_l_analyser() throws Exception {
+        mvc.perform(googleLogin("x".repeat(4097)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(google);
+    }
+
+    @Test
+    void la_connexion_google_non_configuree_repond_503_avec_un_message_clair() throws Exception {
+        given(google.verify(any())).willThrow(new GoogleSignInUnavailableException("Connexion Google non configurée"));
+
+        mvc.perform(googleLogin("jeton-google"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.detail").value("Connexion Google non configurée"));
+    }
+
+    @Test
+    void une_identite_google_qui_ne_peut_pas_ouvrir_le_compte_repond_403_avec_le_motif() throws Exception {
+        var identity = new GoogleIdentity("sub-intrus", "alice@example.com", false);
+        given(google.verify("jeton-google")).willReturn(identity);
+        given(service.googleLogin(identity)).willThrow(new GoogleAccountRefusedException("E-mail non vérifié"));
+
+        mvc.perform(googleLogin("jeton-google"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.detail").value("E-mail non vérifié"));
+    }
+
+    @Test
+    void la_connexion_par_mot_de_passe_d_un_compte_google_repond_401_en_invitant_a_utiliser_google() throws Exception {
+        given(service.login(any(), any())).willThrow(new PasswordNotSetException());
+
+        mvc.perform(json(post("/api/auth/login"), "alice@gmail.com", PASSWORD))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("PASSWORD_NOT_SET"))
+                .andExpect(jsonPath("$.detail").value(new PasswordNotSetException().getMessage()));
+    }
+
+    private static MockHttpServletRequestBuilder googleLogin(String idToken) {
+        return post("/api/auth/google").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"idToken\":\"%s\"}".formatted(idToken));
     }
 
     private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String email,

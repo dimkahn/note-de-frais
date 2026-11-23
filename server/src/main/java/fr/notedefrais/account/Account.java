@@ -13,8 +13,11 @@ public class Account {
     /** Toujours en minuscules (normalisé par {@link AccountService}). */
     @Column(nullable = false, unique = true)
     private String email;
-    /** Hash BCrypt ; jamais le mot de passe en clair. */
+    /** Hash BCrypt ; jamais le mot de passe en clair. Absent pour un compte créé par Google. */
     private String passwordHash;
+    /** Identifiant Google ({@code sub}) du compte lié, s'il y en a un. */
+    @Column(unique = true)
+    private String googleSubject;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Plan plan = Plan.FREE;
@@ -28,9 +31,21 @@ public class Account {
         this.passwordHash = passwordHash;
     }
 
+    static Account fromGoogle(String email, String googleSubject) {
+        Account account = new Account(email, null);
+        account.googleSubject = googleSubject;
+        return account;
+    }
+
     @PrePersist
     void onCreate() {
         createdAt = Instant.now();
+    }
+
+    /** Le mot de passe éventuel est retiré : désormais, seul Google ouvre ce compte. */
+    void linkGoogle(String subject) {
+        googleSubject = subject;
+        passwordHash = null;
     }
 
     void changePlan(Plan newPlan) {
@@ -42,4 +57,5 @@ public class Account {
     String getPasswordHash() { return passwordHash; }
     public Plan getPlan() { return plan; }
     public Instant getCreatedAt() { return createdAt; }
+    String getGoogleSubject() { return googleSubject; }
 }
