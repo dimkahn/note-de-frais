@@ -150,6 +150,77 @@ l'app garde les valeurs lues sur l'appareil.
 - `NOT_INCLUDED` : badge calculé comme sans serveur (« À vérifier » / « À compléter ») et bandeau
   « Analyse IA incluse avec Premium » sur la fiche ; le pré-remplissage de l'appareil est conservé.
 
+## Décisions prises en phase 3 (connexion Google)
+
+- `POST /api/auth/google {idToken}` → 200 `{token, account}` comme la connexion. Le jeton est vérifié
+  (signature, émetteur, audience = identifiant client OAuth « web », validité) par `google-api-client`
+  derrière `GoogleIdentityVerifier` (paquet `account`), implémenté dans le paquet `google` ; la
+  vérification (réseau : certificats de Google) a lieu **hors transaction**, dans le contrôleur.
+- Sans `NDF_GOOGLE_CLIENT_ID` : **503** « Connexion Google non configurée sur ce serveur » (plutôt
+  que 404 : la route existe, c'est la configuration qui manque, et l'app affiche un message clair).
+  Google injoignable ou certificats illisibles → 503 aussi. Jeton invalide, expiré, mal formé ou
+  destiné à une autre application → 401. Jeton de plus de 4 096 caractères → 400.
+- Règles : `sub` connu → connexion (même si l'e-mail Google a changé) ; sinon e-mail **vérifié**
+  par Google égal à celui d'un compte → liaison ; sinon création en Gratuit sans mot de passe.
+  Refus **403** avec le motif : e-mail non vérifié (y compris pour une création, pour ne pas
+  réserver l'adresse d'un tiers), ou compte déjà lié à un **autre** compte Google.
+- **La liaison retire le mot de passe, les sessions et les clés d'appareil existants** du compte :
+  l'inscription ne prouve pas la possession de l'e-mail, un tiers a donc pu créer le compte avant
+  son titulaire ; après liaison, seul Google ouvre le compte. Conséquence : un utilisateur qui
+  avait un mot de passe ne s'en sert plus (message clair au login). À rediscuter si l'on ajoute
+  la vérification de l'e-mail à l'inscription.
+- Un compte sans mot de passe (créé ou lié par Google) qui tente le mot de passe reçoit 401 avec
+  `code: "PASSWORD_NOT_SET"` ; l'app affiche « Ce compte n'a pas de mot de passe : utilisez
+  « Continuer avec Google » ». Assumé : cela révèle qu'un compte existe pour cet e-mail, comme
+  déjà l'inscription (409).
+- App : `google_sign_in` 7 derrière `GoogleAuth` ; annulation → rien ne change ; 401 → « Connexion
+  Google refusée, réessayez. », 403 → motif du serveur, 503 → « indisponible sur ce serveur ».
+  Ensuite tout se passe comme après une connexion par mot de passe (synchro, empreinte proposée,
+  clé d'un autre compte effacée). `serverClientId` : `buildGoogleServerClientId` dans
+  `app/lib/data/server_config.dart`, surchargeable par `--dart-define=GOOGLE_SERVER_CLIENT_ID=...` ;
+  vide → bouton masqué.
+- Restent ouverts : iOS non configuré (identifiant client iOS + schéma d'URL dans `Info.plist`) ;
+  deux premières connexions Google simultanées pour le même compte peuvent se heurter à l'unicité
+  (500, la suivante réussit) ; pas de « délier Google » ni de « définir un mot de passe ».
+
+## Mise en place Google (pas à pas)
+
+Rien n'est à inventer : chaque identifiant vient de la console Google Cloud.
+
+1. **Projet** : <https://console.cloud.google.com/> → sélecteur de projet → « Nouveau projet »
+   (par ex. « Note de frais »).
+2. **Écran de consentement** : « API et services » → « Écran de consentement OAuth » (ou « Google
+   Auth Platform » → « Branding ») : type **Externe**, nom de l'app, e-mail d'assistance et de
+   contact. Portées : les portées de base (`openid`, `email`, `profile`) suffisent. Tant que l'app
+   est « En test », ajouter les comptes Google autorisés dans « Utilisateurs test ».
+3. **Identifiant client « Application Web »** (pour le serveur) : « Identifiants » (ou « Clients »)
+   → « Créer des identifiants » → « ID client OAuth » → type **Application Web**, nom « Serveur
+   note de frais », sans origine ni URI de redirection. Copier l'ID client
+   (`….apps.googleusercontent.com`) ; le code secret n'est **pas** utilisé.
+4. **Identifiant client « Android »** (pour l'app) : même menu → type **Android**, nom du paquet
+   `fr.notedefrais.note_de_frais`, empreinte **SHA-1** du certificat de signature. Pour le
+   certificat debug :
+
+   ```sh
+   keytool -list -v -alias androiddebugkey -keystore ~/.android/debug.keystore \
+     -storepass android -keypass android
+   # ou, depuis app/android :
+   ./gradlew signingReport   # ligne « SHA1 » de la variante debug
+   ```
+
+   Rien à copier dans l'app depuis cet identifiant : Google reconnaît l'app par son paquet et son
+   SHA-1. Créer un second identifiant Android avec le SHA-1 du certificat **release** (ou celui
+   de la signature d'application Google Play) avant de publier.
+5. **Où mettre les valeurs** — la même valeur partout, l'ID client **Web** :
+   - serveur : variable d'environnement `NDF_GOOGLE_CLIENT_ID=<ID client Web>` (lu par
+     `app.google.client-id` dans `application.yml`) ;
+   - app : `buildGoogleServerClientId` dans `app/lib/data/server_config.dart`, ou au lancement
+     `flutter run --dart-define=GOOGLE_SERVER_CLIENT_ID=<ID client Web>`.
+6. **Vérifier** : relancer le serveur et l'app ; la page Compte affiche « Continuer avec Google ».
+   Erreurs fréquentes : 503 → `NDF_GOOGLE_CLIENT_ID` absent ; « Connexion Google impossible sur
+   cet appareil » → SHA-1 ou nom de paquet de l'identifiant Android incorrects, ou compte absent
+   des utilisateurs test ; 401 → l'app et le serveur n'utilisent pas le même ID client Web.
+
 ## Plan de tests (ordre)
 
 Serveur : hash et vérification du mot de passe ; inscription (201, 409, 400) ; connexion (200, 401) ;
