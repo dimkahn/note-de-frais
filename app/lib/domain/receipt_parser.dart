@@ -55,8 +55,20 @@ final class ReceiptParser {
     r'(?<![\d.,])(\d{1,3}(?:[  .,]\d{3})+|\d+)[.,](\d{2})(?![\d%]|[.,]\d|\s%)',
   );
 
+  /// Centimes mal reconnus par l'OCR : lettre O pour zéro, espace après la virgule (« 304. O0 »).
+  /// L'espace n'est toléré qu'en fin de ligne (devise éventuelle) : « 3, 25 pièces » n'est pas un
+  /// montant.
+  static final _ocrCents = RegExp(
+    r'(\d)([.,])(?:([0-9Oo]{2})(?![\dOo])| ([0-9Oo]{2})(?=\s*(?:€|EUR)?\s*$))',
+  );
+
+  static String _fixOcrCents(String line) => line.replaceAllMapped(
+    _ocrCents,
+    (m) => '${m[1]}${m[2]}${(m[3] ?? m[4])!.replaceAll(RegExp('[Oo]'), '0')}',
+  );
+
   static List<int> _amounts(String line) => [
-    for (final m in _amount.allMatches(line))
+    for (final m in _amount.allMatches(_fixOcrCents(line)))
       int.parse(m[1]!.replaceAll(RegExp(r'\D'), '')) * 100 + int.parse(m[2]!),
   ];
 
@@ -77,7 +89,9 @@ final class ReceiptParser {
       final f = _fold(lines[i]);
       if (!_totalKeys.any(f.contains) || f.contains('SOUS')) continue;
       var amounts = _amounts(lines[i]);
-      if (amounts.isEmpty && i + 1 < lines.length) {
+      if (amounts.isEmpty &&
+          i + 1 < lines.length &&
+          _isAmountOnly(lines[i + 1])) {
         amounts = _amounts(lines[i + 1]);
       }
       candidates.addAll(amounts);
@@ -91,6 +105,13 @@ final class ReceiptParser {
     }
     return _max(candidates);
   }
+
+  /// Ligne réduite à un montant (et sa devise) : la valeur d'un mot-clé posé seul sur la ligne
+  /// précédente (« NET A PAYER » / « 42,50 »), pas une ligne d'article sous un en-tête de colonne
+  /// (« PRIX TTC »).
+  static bool _isAmountOnly(String line) =>
+      RegExp(r'^\s*(?:€|EUR|EUROS?)?\s*$')
+          .hasMatch(_fold(_fixOcrCents(line).replaceAll(_amount, '')));
 
   /// Une ligne « total TVA » si elle existe, sinon la somme des lignes par taux (le plus petit
   /// montant de chaque ligne : la TVA est inférieure à la base HT et au TTC).

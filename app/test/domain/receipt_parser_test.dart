@@ -1,6 +1,35 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:note_de_frais/domain/receipt_parser.dart';
 
+/// Texte réellement rendu par ML Kit (sortie d'`assembleRows`) sur le ticket de l'île de loisirs de
+/// Cergy, le 23/11/2026. Erreurs d'OCR conservées : « 304. O0 » pour le total, « TIC » pour TTC…
+const ticketCergyLuParMlKit = '''
+ILE DE LOISIRS OE CERNY PONTOSE
+CAISSE MULTISPORT
+JUSTIFICATIF DE PAIEMENT
+A PRESENTER SUR L'ACTIVITE
+ARTICLES PRIX TTC
+PASS IND CLUB N 26 304.00 A
+19.00 Eur. x 16 Unita#233;
+TOTAL (EURO) 304. O0
+CB 304.00
+NUMERO : 513269##W*88
+DONT TVA HT TVA TIC
+A 20,00 % 253,33 50,67 304,00
+Rue des Etangs
+95001 Cerey Pontoise Cedex France
+Tel : 01 30 30 21 55
+Siret : 2595006270003 NAF : 9311Z
+TVA : FR69259500627
+TOUTE SORTIE EST DEFINITIVE
+TICKET NUMERO WS-4550
+NUMERO DE SAISTE EN REGIE 271131
+ENREGISTRE LE 10/10/2026 09:39:32
+IHPRIME LE 10/10/2026 09:39:32
+CAISSIER 194 (CS)
+LOGICIEL OXYGENO V3.11
+''';
+
 void main() {
   const parser = ReceiptParser();
 
@@ -42,6 +71,58 @@ RENDU 14,30
       final guess = parser.parse('Café 2,50\nCroissant 1,30\nEspèces 10,00');
 
       expect(guess.amountTotal, '2.50');
+    });
+
+    test(
+      "ne lit pas la ligne d'article sous un en-tête de colonne « PRIX TTC »",
+      () {
+        final guess = parser.parse('''
+ILE DE LOISIRS DE CERGY PONTOISE
+ARTICLES PRIX TTC *
+PASS IND CLUB N 26 304.00 A
+19.00 Eur. x 16 Unit
+TOTAL (EURO) 304.00
+CB 304.00
+* DONT TVA HT TVA TTC
+A 20.00 % 253.33 50.67 304.00
+''');
+
+        expect(guess.amountTotal, '304.00');
+      },
+    );
+
+    test(
+      'lit le total du ticket de Cergy tel que lu par l\'OCR du téléphone',
+      () {
+        final guess = parser.parse(ticketCergyLuParMlKit);
+
+        expect(guess.amountTotal, '304.00');
+      },
+    );
+
+    test('lit sur la ligne suivante un montant mal reconnu par l\'OCR', () {
+      expect(
+        parser.parse('NET A PAYER\n42. 5O\nARTICLE 99,00').amountTotal,
+        '42.50',
+      );
+    });
+
+    test('ne prend pas « 3, 25 pièces » pour un montant', () {
+      expect(
+        parser.parse('Article 3, 25 pièces\nCafé 2,50').amountTotal,
+        '2.50',
+      );
+    });
+
+    test('lit sur la ligne suivante un montant suivi de « TTC »', () {
+      expect(
+        parser.parse('NET A PAYER\n42,50 TTC\nARTICLE 99,00').amountTotal,
+        '42.50',
+      );
+    });
+
+    test('lit le montant suivi de la devise sur la ligne suivante', () {
+      expect(parser.parse('NET A PAYER\n42,50 €').amountTotal, '42.50');
     });
 
     test('comprend les séparateurs de milliers', () {
