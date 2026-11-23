@@ -116,13 +116,47 @@ l'app garde les valeurs lues sur l'appareil.
 - Reste ouvert : une clé non révoquée (désactivation hors-ligne, changement de compte) reste valide
   sur le serveur — une liste des appareils avec révocation dans la page Compte le réglerait.
 
+## Décisions prises en phase 2 (offres et quotas)
+
+- **Une suppression logique libère le quota** : l'usage d'un compte est la somme des `sizeBytes`
+  de ses dépenses **non supprimées** ; les fichiers d'une dépense supprimée restent sur le disque
+  (originaux jamais supprimés) mais ne comptent plus.
+- `sizeBytes` = original + rendu courant. À l'envoi, seul l'original est connu : le contrôle porte
+  sur `usage + taille de l'original > quota` (égalité acceptée) ; le rendu, ajouté au traitement,
+  peut faire dépasser légèrement le quota — accepté. Le re-traitement remplace la taille du rendu.
+- Contrôle du quota sans verrou : deux envois simultanés du même compte peuvent dépasser le quota
+  d'au plus un justificatif — accepté (borné, pas de paiement en jeu).
+- Le renvoi d'une dépense déjà enregistrée (même UUID) n'est jamais refusé pour quota (idempotence).
+- Dépenses antérieures aux quotas (sans taille) : taille calculée depuis les fichiers au démarrage
+  (requête ciblée qui n'écrit que `sizeBytes`, sans toucher au traitement en cours) ; fichiers
+  illisibles → restent sans taille (non comptés), retentées au démarrage suivant.
+- Offres dans `app.plans.<offre>.{quota, ai-analysis}` (`DataSize` : 100MB = 104 857 600 octets) ;
+  une offre sans configuration fait échouer le démarrage. Sans IA, le rendu est produit et le statut
+  est `NOT_INCLUDED` ; les champs (lus sur l'appareil ou corrigés) ne sont pas touchés, y compris au
+  re-traitement. Les dépenses sans propriétaire ne sont jamais analysées.
+- `PUT /api/admin/accounts/{email}/plan` répond 200 `{email, plan}` (e-mail normalisé) ; 400 sans
+  offre valide. Les réponses d'inscription/connexion restent `{email, plan}` : l'app relit
+  `GET /api/account` juste après la connexion pour l'usage et le quota.
+- App, envoi refusé pour quota : la dépense reste en attente d'envoi sur l'appareil et est **retentée
+  à la synchronisation suivante** (action de l'utilisateur, lancement, reconnexion) — le choix le plus
+  simple. Pas de boucle : le rafraîchissement périodique ne concerne plus que les dépenses déjà reçues
+  par le serveur. La page Compte affiche « Espace en ligne plein : N dépense(s) reste(nt) sur cet
+  appareil » d'après le rapport de la dernière synchro (chaque synchro retente l'envoi, donc le
+  message revient tant que la place manque). L'usage est relu après chaque synchro qui a envoyé ou
+  refusé quelque chose. Reste ouvert : chaque synchro renvoie l'image entière d'une capture refusée
+  (ne retenter qu'une fois de la place libérée économiserait des données mobiles).
+- App, barre d'usage : Mo binaires (1 Mo = 1 048 576 octets, cohérent avec 100MB côté serveur),
+  « 0,3 Mo » sous 1 Mo, Go au-delà de 1 Go ; couleur d'erreur strictement au-delà de 90 %.
+- `NOT_INCLUDED` : badge calculé comme sans serveur (« À vérifier » / « À compléter ») et bandeau
+  « Analyse IA incluse avec Premium » sur la fiche ; le pré-remplissage de l'appareil est conservé.
+
 ## Plan de tests (ordre)
 
 Serveur : hash et vérification du mot de passe ; inscription (201, 409, 400) ; connexion (200, 401) ;
 jeton haché en base, expiré refusé, révoqué après déconnexion ; `/api/expenses` sans jeton → 401 ;
 un compte ne voit pas / ne modifie pas / ne supprime pas la dépense d'un autre (404) ;
 `GET /api/account`. Phase 2 : taille comptée à l'envoi ; refus au-delà du quota ; suppression
-logique libère-t-elle le quota (oui : fichiers conservés mais non comptés — à trancher en phase 2) ;
+logique libère le quota (tranché : oui, fichiers conservés mais non comptés) ;
 pas d'appel à `ReceiptExtractor` en Gratuit (double de test) ; changement de plan par l'admin.
 App : client d'authentification (faux HTTP) ; stockage du jeton (double) ; écran Compte (widget
 tests : formulaire, erreurs, état connecté, déconnexion) ; synchro avec `Authorization`.
