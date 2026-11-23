@@ -33,6 +33,12 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     private static final double MIN_AREA_RATIO = 0.10;
     private static final double MAX_AREA_RATIO = 0.98;
     private static final int JPEG_QUALITY = 90;
+    /** Tolérances successives de l'approximation en quadrilatère (bords irréguliers, coins arrondis). */
+    private static final double[] APPROX_TOLERANCES = {0.02, 0.03, 0.05};
+    /** Passe « fond clair ». */
+    private static final double WEAK_CLAHE_CLIP = 3.0;
+    private static final double WEAK_CANNY_LOW = 20;
+    private static final double WEAK_CANNY_HIGH = 60;
     /** Côté maximal en sortie : suffisant pour la lecture, raisonnable pour l'envoi à Claude. */
     private static final int MAX_OUTPUT_SIDE = 2400;
 
@@ -61,6 +67,10 @@ public final class OpenCvImageProcessor implements ImageProcessor {
 
     // --- Détection ---
 
+    /**
+     * Deux passes : bords francs (fond sombre, seuils d'Otsu), puis, si rien n'est trouvé, bords
+     * faibles (fond clair : contraste égalisé localement, seuils bas, contour refermé).
+     */
     private Optional<Point[]> detectDocument(Mat src, MatScope scope) {
         double scale = Math.min(1.0, DETECTION_HEIGHT / src.rows());
         Mat small = scope.add(new Mat());
@@ -70,37 +80,57 @@ public final class OpenCvImageProcessor implements ImageProcessor {
         Imgproc.cvtColor(small, gray, Imgproc.COLOR_BGR2GRAY);
         Imgproc.GaussianBlur(gray, gray, new Size(5, 5), 0);
 
-        Mat edges = scope.add(new Mat());
-        double otsu = Imgproc.threshold(gray, scope.add(new Mat()), 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
-        Imgproc.Canny(gray, edges, otsu * 0.5, otsu);
-        Imgproc.dilate(edges, edges, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3, 3)));
-
-        List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(edges, contours, scope.add(new Mat()), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
-        contours.forEach(c -> scope.add(c));
-
         double imageArea = small.size().area();
-        return contours.stream()
-                .sorted(Comparator.comparingDouble((MatOfPoint c) -> Imgproc.contourArea(c)).reversed())
-                .limit(5)
-                .map(c -> approximateQuad(c, scope))
-                .flatMap(Optional::stream)
-                .filter(q -> {
-                    double ratio = Imgproc.contourArea(new MatOfPoint(q)) / imageArea;
-                    return ratio >= MIN_AREA_RATIO && ratio <= MAX_AREA_RATIO;
-                })
-                .findFirst()
+        return findQuad(strongEdges(gray, scope), imageArea, scope)
+                .or(() -> findQuad(weakEdges(gray, scope), imageArea, scope))
                 .map(q -> scale(q, 1 / scale));
     }
 
-    private static Optional<Point[]> approximateQuad(MatOfPoint contour, MatScope scope) {
+    private static Mat strongEdges(Mat gray, MatScope scope) {
+        Mat edges = scope.add(new Mat());
+        double otsu = Imgproc.threshold(gray, scope.add(new Mat()), 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
+        Imgproc.Canny(gray, edges, otsu * 0.5, otsu);
+        Imgproc.dilate(edges, edges, scope.add(Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3, 3))));
+        return edges;
+    }
+
+    private static Mat weakEdges(Mat gray, MatScope scope) {
+        Mat equalized = scope.add(new Mat());
+        CLAHE clahe = Imgproc.createCLAHE(WEAK_CLAHE_CLIP, new Size(8, 8));
+        clahe.apply(gray, equalized);
+        Mat edges = scope.add(new Mat());
+        Imgproc.Canny(equalized, edges, WEAK_CANNY_LOW, WEAK_CANNY_HIGH);
+        Mat kernel = scope.add(Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(5, 5)));
+        Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel);
+        Imgproc.dilate(edges, edges, kernel);
+        return edges;
+    }
+
+    /** Plus grand contour à 4 coins, convexe, d'une aire plausible ; approximation assouplie progressivement. */
+    private static Optional<Point[]> findQuad(Mat edges, double imageArea, MatScope scope) {
+        List<MatOfPoint> contours = new ArrayList<>();
+        Imgproc.findContours(edges, contours, scope.add(new Mat()), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        contours.forEach(scope::add);
+        return contours.stream()
+                .sorted(Comparator.comparingDouble((MatOfPoint c) -> Imgproc.contourArea(c)).reversed())
+                .limit(5)
+                .map(c -> approximateQuad(c, imageArea, scope))
+                .flatMap(Optional::stream)
+                .findFirst();
+    }
+
+    private static Optional<Point[]> approximateQuad(MatOfPoint contour, double imageArea, MatScope scope) {
         MatOfPoint2f c2f = scope.add(new MatOfPoint2f(contour.toArray()));
         double perimeter = Imgproc.arcLength(c2f, true);
-        MatOfPoint2f approx = scope.add(new MatOfPoint2f());
-        Imgproc.approxPolyDP(c2f, approx, 0.02 * perimeter, true);
-        Point[] pts = approx.toArray();
-        if (pts.length == 4 && Imgproc.isContourConvex(new MatOfPoint(pts))) {
-            return Optional.of(pts);
+        for (double tolerance : APPROX_TOLERANCES) {
+            MatOfPoint2f approx = scope.add(new MatOfPoint2f());
+            Imgproc.approxPolyDP(c2f, approx, tolerance * perimeter, true);
+            Point[] pts = approx.toArray();
+            if (pts.length != 4 || !Imgproc.isContourConvex(new MatOfPoint(pts))) {
+                continue;
+            }
+            double ratio = Imgproc.contourArea(new MatOfPoint(pts)) / imageArea;
+            return ratio >= MIN_AREA_RATIO && ratio <= MAX_AREA_RATIO ? Optional.of(pts) : Optional.empty();
         }
         return Optional.empty();
     }

@@ -22,6 +22,10 @@ final class DocumentScanner {
   static const _minAreaRatio = 0.10;
   static const _maxAreaRatio = 0.98;
   static const _jpegQuality = 90;
+  static const _approxTolerances = [0.02, 0.03, 0.05];
+  static const _weakClaheClip = 3.0;
+  static const _weakCannyLow = 20.0;
+  static const _weakCannyHigh = 60.0;
 
   /// Contour du document dans une image encodée (JPEG/PNG), orientation EXIF appliquée.
   Quad? detect(Uint8List encoded) {
@@ -111,8 +115,19 @@ final class DocumentScanner {
 
   // --- Détection ---
 
+  /// Deux passes : bords francs (fond sombre, seuils d'Otsu), puis, si rien n'est trouvé,
+  /// bords faibles (fond clair : contraste égalisé localement, seuils bas, contour refermé).
   Quad? _detectInGray(cv.Mat gray) {
     final blurred = cv.gaussianBlur(gray, (5, 5), 0);
+    try {
+      return _withEdges(_strongEdges(blurred), gray) ??
+          _withEdges(_weakEdges(blurred), gray);
+    } finally {
+      blurred.dispose();
+    }
+  }
+
+  cv.Mat _strongEdges(cv.Mat blurred) {
     final (otsu, binary) = cv.threshold(
       blurred,
       0,
@@ -121,9 +136,36 @@ final class DocumentScanner {
     );
     final edges = cv.canny(blurred, otsu * 0.5, otsu);
     final kernel = cv.getStructuringElement(cv.MORPH_RECT, (3, 3));
-    final dilated = cv.dilate(edges, kernel);
+    try {
+      return cv.dilate(edges, kernel);
+    } finally {
+      for (final m in [binary, edges, kernel]) {
+        m.dispose();
+      }
+    }
+  }
+
+  cv.Mat _weakEdges(cv.Mat blurred) {
+    final clahe = cv.CLAHE.create(_weakClaheClip, (8, 8));
+    final equalized = clahe.apply(blurred);
+    final edges = cv.canny(equalized, _weakCannyLow, _weakCannyHigh);
+    final kernel = cv.getStructuringElement(cv.MORPH_RECT, (5, 5));
+    final closed = cv.morphologyEx(edges, cv.MORPH_CLOSE, kernel);
+    try {
+      return cv.dilate(closed, kernel);
+    } finally {
+      clahe.dispose();
+      for (final m in [equalized, edges, kernel, closed]) {
+        m.dispose();
+      }
+    }
+  }
+
+  /// Plus grand contour à 4 coins, convexe, d'une aire plausible ; l'approximation est assouplie
+  /// progressivement (bords de ticket irréguliers, coins arrondis).
+  Quad? _withEdges(cv.Mat edges, cv.Mat gray) {
     final (contours, hierarchy) = cv.findContours(
-      dilated,
+      edges,
       cv.RETR_EXTERNAL,
       cv.CHAIN_APPROX_SIMPLE,
     );
@@ -132,28 +174,25 @@ final class DocumentScanner {
       final sorted = contours.toList()
         ..sort((a, b) => cv.contourArea(b).compareTo(cv.contourArea(a)));
       for (final contour in sorted.take(5)) {
-        final approx = cv.approxPolyDP(
-          contour,
-          0.02 * cv.arcLength(contour, true),
-          true,
-        );
-        try {
-          if (approx.length != 4 || !cv.isContourConvex(approx)) continue;
-          final ratio = cv.contourArea(approx) / imageArea;
-          if (ratio < _minAreaRatio || ratio > _maxAreaRatio) continue;
-          return Quad.fromUnordered([
-            for (final p in approx.toList())
-              Corner(p.x / gray.cols, p.y / gray.rows),
-          ]);
-        } finally {
-          approx.dispose();
+        final perimeter = cv.arcLength(contour, true);
+        for (final tolerance in _approxTolerances) {
+          final approx = cv.approxPolyDP(contour, tolerance * perimeter, true);
+          try {
+            if (approx.length != 4 || !cv.isContourConvex(approx)) continue;
+            final ratio = cv.contourArea(approx) / imageArea;
+            if (ratio < _minAreaRatio || ratio > _maxAreaRatio) break;
+            return Quad.fromUnordered([
+              for (final p in approx.toList())
+                Corner(p.x / gray.cols, p.y / gray.rows),
+            ]);
+          } finally {
+            approx.dispose();
+          }
         }
       }
       return null;
     } finally {
-      for (final m in [blurred, binary, edges, kernel, dilated]) {
-        m.dispose();
-      }
+      edges.dispose();
       contours.dispose();
       hierarchy.dispose();
     }

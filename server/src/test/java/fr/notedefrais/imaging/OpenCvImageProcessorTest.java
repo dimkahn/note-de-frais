@@ -32,6 +32,42 @@ class OpenCvImageProcessorTest {
     }
 
     @Test
+    void recadre_un_ticket_blanc_pose_sur_du_bois_clair() throws IOException {
+        byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
+                new Color(215, 190, 150), new Color(245, 242, 238));
+
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        assertThat(out.getWidth()).isBetween(480, 580);
+        assertThat(out.getHeight()).isBetween(850, 960);
+    }
+
+    @Test
+    void recadre_un_ticket_blanc_pose_sur_une_table_blanche() throws IOException {
+        byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
+                new Color(216, 214, 212), new Color(247, 246, 245));
+
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        assertThat(out.getWidth()).isBetween(480, 580);
+        assertThat(out.getHeight()).isBetween(850, 960);
+    }
+
+    @Test
+    void n_invente_pas_de_contour_sur_un_fond_clair_sans_document() throws IOException {
+        Color table = new Color(216, 214, 212);
+        byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4, table, table);
+
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+
+        assertThat(result.cropped()).isFalse();
+    }
+
+    @Test
     void ne_recadre_pas_quand_aucun_document_n_est_detecte() throws IOException {
         byte[] uniform = encode(filled(800, 600, new Color(200, 200, 200)));
 

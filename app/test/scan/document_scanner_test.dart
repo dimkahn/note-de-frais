@@ -32,6 +32,50 @@ Uint8List photoOfReceipt(int w, int h, List<(int, int)> corners) {
   return bytes;
 }
 
+/// Photo réaliste sur fond clair : éclairage en dégradé, bruit de capteur, ticket peu contrasté.
+Uint8List photoOnLightBackground(
+  int w,
+  int h,
+  List<(int, int)> corners, {
+  required cv.Scalar background,
+  required cv.Scalar paper,
+}) {
+  final img = cv.Mat.fromScalar(h, w, cv.MatType.CV_8UC3, background);
+  final poly = cv.VecVecPoint.fromList([
+    [for (final (x, y) in corners) cv.Point(x, y)],
+  ]);
+  cv.fillPoly(img, poly, paper);
+  final (x0, y0) = corners.first;
+  for (var y = y0 + 60; y < y0 + 400; y += 40) {
+    cv.rectangle(
+      img,
+      cv.Rect(x0 + 60, y, 220, 10),
+      cv.Scalar(90, 90, 90),
+      thickness: -1,
+    );
+  }
+  // Éclairage : plus sombre d'un côté (ombre douce), comme sous une lampe.
+  final shade = cv.Mat.zeros(h, w, cv.MatType.CV_8UC3);
+  for (var x = 0; x < w; x += 4) {
+    final v = (x / w * 40).round();
+    cv.rectangle(
+      shade,
+      cv.Rect(x, 0, 4, h),
+      cv.Scalar(v.toDouble(), v.toDouble(), v.toDouble()),
+      thickness: -1,
+    );
+  }
+  final lit = cv.subtract(img, shade);
+  final noise = cv.Mat.zeros(h, w, cv.MatType.CV_8UC3);
+  cv.randn(noise, cv.Scalar.all(0), cv.Scalar.all(6));
+  final noisy = cv.add(lit, noise);
+  final (_, bytes) = cv.imencode('.jpg', noisy);
+  for (final m in [img, shade, lit, noise, noisy]) {
+    m.dispose();
+  }
+  return bytes;
+}
+
 Uint8List uniform(int w, int h) {
   final img = cv.Mat.fromScalar(
     h,
@@ -64,6 +108,53 @@ void main() {
       expect(quad.topLeft.y, closeTo(0.15, 0.02));
       expect(quad.bottomRight.x, closeTo(0.76, 0.02));
       expect(quad.bottomRight.y, closeTo(0.864, 0.02));
+    });
+
+    test('trouve un ticket blanc posé sur du bois clair', () {
+      final quad = scanner.detect(
+        photoOnLightBackground(
+          1000,
+          1400,
+          receiptCorners,
+          background: cv.Scalar(150, 190, 215),
+          paper: cv.Scalar(238, 242, 245),
+        ),
+      );
+
+      expect(quad, isNotNull);
+      expect(quad!.topLeft.x, closeTo(0.24, 0.02));
+      expect(quad.bottomRight.y, closeTo(0.864, 0.02));
+    });
+
+    test('trouve un ticket blanc posé sur une table blanche', () {
+      final quad = scanner.detect(
+        photoOnLightBackground(
+          1000,
+          1400,
+          receiptCorners,
+          background: cv.Scalar(212, 214, 216),
+          paper: cv.Scalar(245, 246, 247),
+        ),
+      );
+
+      expect(quad, isNotNull);
+      expect(quad!.topLeft.x, closeTo(0.24, 0.02));
+      expect(quad.bottomRight.y, closeTo(0.864, 0.02));
+    });
+
+    test('n\'invente pas de contour sur un fond clair sans document', () {
+      // Ticket de la couleur exacte du fond : seuls restent le dégradé et le bruit.
+      final quad = scanner.detect(
+        photoOnLightBackground(
+          1000,
+          1400,
+          const [(0, 0), (1, 0), (1, 1), (0, 1)],
+          background: cv.Scalar(212, 214, 216),
+          paper: cv.Scalar(212, 214, 216),
+        ),
+      );
+
+      expect(quad, isNull);
     });
 
     test('ne trouve rien sur une image uniforme', () {
