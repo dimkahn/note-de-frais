@@ -68,8 +68,28 @@ l'app garde les valeurs lues sur l'appareil.
 3. **Connexion Google** : vérification du jeton Google côté serveur (identifiant client OAuth en
    configuration), `google_sign_in` côté app. Nécessite un projet Google Cloud et les identifiants
    OAuth (SHA-1 de l'app) : à créer par l'utilisateur.
+1b. **Connexion par empreinte** (choix du 2026-11-23 : reconnexion sans mot de passe, pas de
+   verrouillage de l'app). Serveur : `POST /api/auth/devices` (connecté) émet une **clé d'appareil**
+   longue durée (256 bits, seul le hash SHA-256 stocké, révocable, libellé de l'appareil) ;
+   `POST /api/auth/device-login {deviceKey}` → nouvelle session (401 si clé inconnue ou révoquée) ;
+   `DELETE /api/auth/devices/current` (connecté, clé dans le corps) la révoque. App : après connexion,
+   « Activer la connexion par empreinte » sur la page Compte ; la clé est en stockage sécurisé et
+   n'est lue qu'après une authentification biométrique réussie (`local_auth`, biométrie seule,
+   derrière une interface doublée dans les tests) ; déconnecté avec une clé enregistrée →
+   bouton « Se connecter avec l'empreinte » à côté du formulaire (le mot de passe reste possible) ;
+   « Désactiver l'empreinte » révoque la clé et l'efface. La déconnexion conserve la clé. 401 au
+   device-login → clé effacée, retour au formulaire.
 4. **Documents synchronisés sur le serveur** (comptent dans le quota).
 5. **Paiement** : plus tard.
+
+## Décisions prises en phase 1
+
+- Sans `NDF_API_TOKEN` configuré, `/api/admin/**` est **fermé** (sinon n'importe qui s'attribuerait Premium).
+- À chaque connexion, la date de dernière synchro est remise à zéro (récupère tout le compte,
+  même après un changement de compte sur l'appareil).
+- Mot de passe : 10 caractères minimum, 72 octets maximum (limite BCrypt) → 400 au-delà.
+- Restent ouverts : rattachement des dépenses d'avant les comptes (sans propriétaire, invisibles) ;
+  pas d'adresse de serveur par défaut dans l'app (à saisir dans « Avancé »).
 
 ## Plan de tests (ordre)
 
