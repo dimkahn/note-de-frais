@@ -13,6 +13,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'data/document_repository.dart';
 import 'data/expense_repository.dart';
 import 'data/export_service.dart';
+import 'data/platform_downloads_folder.dart';
 import 'data/system_file_sharer.dart';
 import 'data/file_store.dart';
 import 'data/local_store.dart';
@@ -50,6 +51,7 @@ Future<void> main() async {
   final export = ExportService(
     sharer: const SystemFileSharer(),
     tempDir: await getTemporaryDirectory(),
+    downloads: const PlatformDownloadsFolder(),
   );
   repo.sync(); // en arrière-plan : l'app est utilisable immédiatement, même hors-ligne
 

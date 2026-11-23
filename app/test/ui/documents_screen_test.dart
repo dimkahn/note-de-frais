@@ -12,6 +12,9 @@ import 'package:note_de_frais/domain/quad.dart';
 import 'package:note_de_frais/ui/documents_screen.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
+
+import '../support/temp_downloads.dart';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 final class _FakeSharer implements FileSharer {
@@ -79,7 +82,11 @@ void main() {
         providers: [
           ChangeNotifierProvider.value(value: repo),
           Provider.value(
-            value: ExportService(sharer: sharer, tempDir: dir),
+            value: ExportService(
+              sharer: sharer,
+              tempDir: dir,
+              downloads: TempDownloads(Directory('${dir.path}/Download')),
+            ),
           ),
         ],
         child: const MaterialApp(home: DocumentsScreen()),
@@ -145,7 +152,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Exporter'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('PDF'));
+    await tester.tap(find.text('Partager le PDF'));
     for (var i = 0; i < 40 && sharer.shared.isEmpty; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
@@ -180,7 +187,7 @@ void main() {
 
       await tester.tap(find.byTooltip('Exporter'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('PDF'));
+      await tester.tap(find.text('Partager le PDF'));
       for (
         var i = 0;
         i < 40 && find.text('Export impossible').evaluate().isEmpty;
@@ -242,4 +249,32 @@ void main() {
       expect(repo.documents.single.pages, hasLength(1));
     },
   );
+
+  testWidgets('enregistre le PDF dans Téléchargements et le confirme', (
+    tester,
+  ) async {
+    await pump(tester, documents: 1);
+    await openDocument(tester);
+
+    await tester.tap(find.byTooltip('Exporter'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PDF dans Téléchargements'));
+    for (
+      var i = 0;
+      i < 40 && find.textContaining('Enregistré dans').evaluate().isEmpty;
+      i++
+    ) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+
+    expect(
+      find.text('Enregistré dans Téléchargements : Contrat 0.pdf'),
+      findsOneWidget,
+    );
+    expect(File('${dir.path}/Download/Contrat 0.pdf').existsSync(), isTrue);
+    expect(sharer.shared, isEmpty);
+  });
 }

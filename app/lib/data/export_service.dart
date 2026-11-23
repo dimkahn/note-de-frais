@@ -10,15 +10,26 @@ abstract interface class FileSharer {
   Future<void> share(List<File> files, {required String subject});
 }
 
+/// Frontière vers le dossier Téléchargements de l'appareil (sur iOS : dossier de l'app visible
+/// dans l'application Fichiers).
+abstract interface class DownloadsFolder {
+  Future<Directory> locate();
+}
+
 /// Export d'un justificatif ou d'un document : un PDF de toutes les pages, ou les photos recadrées
 /// (format d'origine conservé).
 final class ExportService {
-  ExportService({required this._sharer, required this._tempDir});
+  ExportService({
+    required this._sharer,
+    required this._tempDir,
+    required this._downloads,
+  });
 
   static const _maxNameLength = 100;
 
   final FileSharer _sharer;
   final Directory _tempDir;
+  final DownloadsFolder _downloads;
 
   /// Une page A4 par image (paysage si l'image l'est), image entière sans marge.
   Future<Uint8List> buildPdf(List<String> imagePaths) async {
@@ -38,29 +49,57 @@ final class ExportService {
     return pdf.save();
   }
 
-  Future<void> sharePdf(String title, List<String> imagePaths) async {
+  Future<void> sharePdf(String title, List<String> imagePaths) async =>
+      _sharer.share([await _pdfFile(title, imagePaths)], subject: title);
+
+  Future<void> sharePhotos(String title, List<String> imagePaths) async =>
+      _sharer.share(await _photoFiles(title, imagePaths), subject: title);
+
+  /// Enregistre directement dans Téléchargements ; renvoie le fichier créé.
+  Future<List<File>> savePdf(String title, List<String> imagePaths) async =>
+      _saveAll([await _pdfFile(title, imagePaths)]);
+
+  Future<List<File>> savePhotos(String title, List<String> imagePaths) async =>
+      _saveAll(await _photoFiles(title, imagePaths));
+
+  Future<File> _pdfFile(String title, List<String> imagePaths) async {
     final file = File(
       p.join((await _exportDir()).path, '${_fileName(title)}.pdf'),
     );
-    await file.writeAsBytes(await buildPdf(imagePaths), flush: true);
-    await _sharer.share([file], subject: title);
+    return file.writeAsBytes(await buildPdf(imagePaths), flush: true);
   }
 
-  /// Copies des images recadrées, nommées d'après le titre (les fichiers de l'app restent intacts).
-  Future<void> sharePhotos(String title, List<String> imagePaths) async {
+  /// Copies des images recadrées, nommées d'après le titre, au format d'origine (les fichiers de
+  /// l'app restent intacts).
+  Future<List<File>> _photoFiles(String title, List<String> imagePaths) async {
     final dir = await _exportDir();
     final name = _fileName(title);
-    final files = <File>[];
-    for (final (i, path) in imagePaths.indexed) {
-      final suffix = imagePaths.length > 1 ? ' - page ${i + 1}' : '';
-      final ext = p.extension(path).toLowerCase();
-      files.add(
-        await File(
-          path,
-        ).copy(p.join(dir.path, '$name$suffix${ext.isEmpty ? '.jpg' : ext}')),
-      );
+    return [
+      for (final (i, path) in imagePaths.indexed)
+        await File(path).copy(
+          p.join(
+            dir.path,
+            '$name${imagePaths.length > 1 ? ' - page ${i + 1}' : ''}'
+            '${p.extension(path).isEmpty ? '.jpg' : p.extension(path).toLowerCase()}',
+          ),
+        ),
+    ];
+  }
+
+  /// Copie dans Téléchargements sans jamais écraser : « Bail.pdf », puis « Bail (2).pdf »…
+  Future<List<File>> _saveAll(List<File> files) async {
+    final target = await _downloads.locate();
+    return [for (final file in files) await file.copy(_freeName(target, file))];
+  }
+
+  static String _freeName(Directory dir, File file) {
+    final base = p.basenameWithoutExtension(file.path);
+    final ext = p.extension(file.path);
+    var candidate = p.join(dir.path, '$base$ext');
+    for (var n = 2; File(candidate).existsSync(); n++) {
+      candidate = p.join(dir.path, '$base ($n)$ext');
     }
-    await _sharer.share(files, subject: title);
+    return candidate;
   }
 
   /// Dossier d'export vidé à chaque export : aucune copie de justificatif ne s'accumule.

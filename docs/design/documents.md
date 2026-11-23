@@ -27,9 +27,28 @@ Critères d'acceptation
 - SQLite v4 : tables `document` et `document_page (document_id, position, …)`.
 - Fichiers : `<support>/documents/<pageId>/original.<ext>` et `processed.jpg` (même `FileStore`).
 
-## API / synchro
-Aucune : les documents restent sur l'appareil (le serveur sert à l'analyse des dépenses).
-Évolution possible : synchroniser les documents comme les dépenses.
+## Choix de l'utilisateur (23/11/2026)
+- Documents **synchronisés avec le serveur** (sauvegarde, autres appareils).
+- Export « Photos » = images **recadrées**.
+- Destination : **menu de partage et enregistrement direct dans Téléchargements**.
+- Portée : un document, une dépense, **et une note de frais complète** (liste filtrée).
+
+## Export
+- `ExportService` produit les fichiers (PDF, photos, note de frais) ; deux sorties :
+  `FileSharer` (menu de partage) et `DownloadsFolder` (Téléchargements ; sur iOS, dossier de
+  l'app visible dans Fichiers). Nom déjà pris ⇒ suffixe « (2) », jamais d'écrasement.
+- Note de frais : 1re page récapitulative (date, commerçant, type, TTC, TVA, devise ; totaux par
+  devise), puis une page par justificatif légendée (date · commerçant · montant).
+
+## API / synchro des documents
+- `PUT /api/documents/{id}` `{title, createdAt, pageIds[]}` : crée ou met à jour (idempotent).
+- `PUT /api/documents/{id}/pages/{pageId}` multipart `file`, `corners`, `filter` : original écrit une
+  seule fois (409 si différent déjà présent → traité comme déjà envoyé), découpe serveur.
+- `DELETE /api/documents/{id}` : suppression logique.
+- `GET /api/documents/changes?since=` : documents modifiés (pages ordonnées, suppressions incluses).
+- `GET /api/documents/{id}/pages/{pageId}/original` et `/processed`.
+- App : `syncState` sur le document (`pendingUpload` / `pendingUpdate` / `pendingDelete`) et
+  `uploaded` par page ; poussée d'abord (pages manquantes puis métadonnées), puis récupération.
 
 ## Couches
 - `domain/document.dart` : modèles immuables, ajout/retrait de page, renommage.

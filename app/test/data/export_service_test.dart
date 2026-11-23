@@ -17,15 +17,30 @@ final class _FakeSharer implements FileSharer {
   }
 }
 
+final class _FolderInTemp implements DownloadsFolder {
+  _FolderInTemp(this.dir);
+
+  final Directory dir;
+
+  @override
+  Future<Directory> locate() => dir.create(recursive: true);
+}
+
 void main() {
   late Directory dir;
+  late Directory downloads;
   late _FakeSharer sharer;
   late ExportService export;
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('ndf_export');
+    downloads = Directory('${dir.path}/Download');
     sharer = _FakeSharer();
-    export = ExportService(sharer: sharer, tempDir: dir);
+    export = ExportService(
+      sharer: sharer,
+      tempDir: dir,
+      downloads: _FolderInTemp(downloads),
+    );
   });
 
   tearDown(() => dir.delete(recursive: true));
@@ -109,5 +124,40 @@ void main() {
     await export.sharePdf('Nouveau', [jpeg('b', 60, 80)]);
 
     expect(previous.existsSync(), isFalse);
+  });
+
+  group('Téléchargements', () {
+    test('enregistre le PDF directement, sans menu de partage', () async {
+      final saved = await export.savePdf('Bail', [jpeg('a', 60, 80)]);
+
+      expect(saved.single.path, '${downloads.path}/Bail.pdf');
+      expect(
+        latin1.decode(saved.single.readAsBytesSync().sublist(0, 5)),
+        '%PDF-',
+      );
+      expect(sharer.shared, isEmpty);
+    });
+
+    test('n\'écrase jamais un fichier déjà présent', () async {
+      await export.savePdf('Bail', [jpeg('a', 60, 80)]);
+
+      final second = await export.savePdf('Bail', [jpeg('b', 60, 80)]);
+
+      expect(second.single.uri.pathSegments.last, 'Bail (2).pdf');
+      expect(File('${downloads.path}/Bail.pdf').existsSync(), isTrue);
+    });
+
+    test('enregistre les photos numérotées', () async {
+      final saved = await export.savePhotos('Bail', [
+        jpeg('a', 60, 80),
+        jpeg('b', 60, 80),
+      ]);
+
+      expect(saved.map((f) => f.uri.pathSegments.last), [
+        'Bail - page 1.jpg',
+        'Bail - page 2.jpg',
+      ]);
+      expect(saved.every((f) => f.parent.path == downloads.path), isTrue);
+    });
   });
 }

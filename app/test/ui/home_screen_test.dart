@@ -14,6 +14,9 @@ import 'package:note_de_frais/domain/receipt_parser.dart';
 import 'package:note_de_frais/ui/home_screen.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
+
+import '../support/temp_downloads.dart';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -64,7 +67,13 @@ void main() {
         providers: [
           ChangeNotifierProvider.value(value: repo),
           Provider.value(
-            value: ExportService(sharer: sharer, tempDir: Directory.systemTemp),
+            value: ExportService(
+              sharer: sharer,
+              tempDir: Directory.systemTemp,
+              downloads: TempDownloads(
+                Directory('${Directory.systemTemp.path}/Download'),
+              ),
+            ),
           ),
         ],
         child: const MaterialApp(home: HomeScreen()),
@@ -209,7 +218,7 @@ void main() {
 
     await tester.tap(find.byTooltip('Exporter'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('PDF'));
+    await tester.tap(find.text('Partager le PDF'));
     for (var i = 0; i < 40 && sharer.shared.isEmpty; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),

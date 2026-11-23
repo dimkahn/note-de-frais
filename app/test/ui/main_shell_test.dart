@@ -12,6 +12,9 @@ import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/ui/main_shell.dart';
 import 'package:provider/provider.dart';
+
+import '../support/temp_downloads.dart';
+
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 final class _NoSharer implements FileSharer {
@@ -54,6 +57,9 @@ void main() {
             value: ExportService(
               sharer: _NoSharer(),
               tempDir: Directory.systemTemp,
+              downloads: TempDownloads(
+                Directory('${Directory.systemTemp.path}/Download'),
+              ),
             ),
           ),
         ],
