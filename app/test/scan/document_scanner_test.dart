@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -143,6 +144,67 @@ void main() {
       },
     );
 
+    test('photo réelle : ticket crème posé sur une feuille blanche', () {
+      // Aperçu caméra capturé sur un téléphone (Android 16) : très peu de contraste, la feuille
+      // dépasse du cadre ; c'est le ticket qu'il faut trouver, pas la feuille.
+      final photo = File('test/fixtures/ticket_sur_feuille_blanche.jpg')
+          .readAsBytesSync();
+
+      final quad = scanner.detect(photo);
+
+      expect(quad, isNotNull);
+      expect(quad!.topLeft.x, closeTo(0.35, 0.04));
+      expect(quad.topLeft.y, closeTo(0.088, 0.04));
+      expect(quad.topRight.x, closeTo(0.845, 0.04));
+      expect(quad.bottomRight.y, closeTo(0.916, 0.04));
+      expect(quad.bottomLeft.x, closeTo(0.305, 0.04));
+    });
+
+    test(
+      'flux caméra (Y + U) : trouve le ticket crème sur feuille blanche',
+      () async {
+        final bgr = cv.imdecode(
+          File('test/fixtures/ticket_sur_feuille_blanche.jpg')
+              .readAsBytesSync(),
+          cv.IMREAD_COLOR,
+        );
+        final ycrcb = cv.split(cv.cvtColor(bgr, cv.COLOR_BGR2YCrCb));
+        final y = ycrcb[0], cb = ycrcb[2];
+        // Le plan U d'un flux YUV 4:2:0 est à demi-résolution.
+        final u = cv.resize(cb, (
+          bgr.cols ~/ 2,
+          bgr.rows ~/ 2,
+        ), interpolation: cv.INTER_AREA);
+        final (luma, w, h) = downsampleLuma(
+          Uint8List.fromList(y.data),
+          width: bgr.cols,
+          height: bgr.rows,
+          bytesPerRow: bgr.cols,
+          maxSide: DocumentScanner.liveMaxSide,
+        );
+        final chroma = sampleChroma(
+          Uint8List.fromList(u.data),
+          lumaWidth: bgr.cols,
+          lumaHeight: bgr.rows,
+          bytesPerRow: u.cols,
+          pixelStride: 1,
+          width: w,
+          height: h,
+        );
+
+        final quad = await detectInBackground(
+          luma,
+          width: w,
+          height: h,
+          blueChroma: chroma,
+        );
+
+        expect(quad, isNotNull);
+        expect(quad!.topLeft.x, closeTo(0.35, 0.05));
+        expect(quad.bottomRight.y, closeTo(0.916, 0.05));
+      },
+    );
+
     test('trouve un ticket blanc posé sur du bois clair', () {
       final quad = scanner.detect(
         photoOnLightBackground(
@@ -285,5 +347,22 @@ void main() {
 
     expect((w, h), (2, 1));
     expect(small, [1, 3]);
+  });
+
+  test('échantillonne la chrominance entrelacée (NV12 / pas de pixel 2) à la taille de la luminance', () {
+    // Luminance 4 x 4, chrominance 2 x 2 entrelacée U,V : U = 10, 20 / 30, 40.
+    final plane = Uint8List.fromList([10, 99, 20, 99, 30, 99, 40, 99]);
+
+    final out = sampleChroma(
+      plane,
+      lumaWidth: 4,
+      lumaHeight: 4,
+      bytesPerRow: 4,
+      pixelStride: 2,
+      width: 2,
+      height: 2,
+    );
+
+    expect(out, [10, 20, 30, 40]);
   });
 }

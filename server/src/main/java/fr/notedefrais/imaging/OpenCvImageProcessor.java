@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 import nu.pattern.OpenCV;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
@@ -37,6 +38,10 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     private static final double[] APPROX_TOLERANCES = {0.02, 0.03, 0.05};
     /** Écart maximal entre l'aire du contour et celle du quadrilatère retenu (15 %). */
     private static final double MAX_FILL_GAP = 0.15;
+    /** Un coin à moins de 2 % du bord de l'image est considéré « sur le bord ». */
+    private static final double BORDER_MARGIN = 0.02;
+    /** Écart minimal de teinte (canal b de Lab) pour tenter la passe couleur. */
+    private static final double MIN_WARMTH_RANGE = 6;
     /** Passe « fond clair ». */
     private static final double WEAK_CLAHE_CLIP = 3.0;
     private static final double WEAK_CANNY_LOW = 20;
@@ -70,8 +75,10 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     // --- Détection ---
 
     /**
-     * Deux passes : bords francs (fond sombre, seuils d'Otsu), puis, si rien n'est trouvé, bords
-     * faibles (fond clair : contraste égalisé localement, seuils bas, contour refermé).
+     * Passes successives, de la plus sûre à la plus permissive : bords francs (fond sombre, seuils
+     * d'Otsu), bords faibles (fond clair : contraste égalisé, seuils bas), puis couleur (canal
+     * jaune-bleu : ticket crème sur feuille blanche). Un contour qui touche les bords de l'image est
+     * probablement la surface sous le document : il ne sert qu'en dernier recours.
      */
     private Optional<Point[]> detectDocument(Mat src, MatScope scope) {
         double scale = Math.min(1.0, DETECTION_HEIGHT / src.rows());
@@ -82,10 +89,62 @@ public final class OpenCvImageProcessor implements ImageProcessor {
         Imgproc.cvtColor(small, gray, Imgproc.COLOR_BGR2GRAY);
         Imgproc.GaussianBlur(gray, gray, new Size(5, 5), 0);
 
+        Mat lab = scope.add(new Mat());
+        Imgproc.cvtColor(small, lab, Imgproc.COLOR_BGR2Lab);
+        Mat warmth = scope.add(new Mat());
+        Core.extractChannel(lab, warmth, 2);
+
         double imageArea = small.size().area();
-        return findQuad(strongEdges(gray, scope), imageArea, scope)
-                .or(() -> findQuad(weakEdges(gray, scope), imageArea, scope))
-                .map(q -> scale(q, 1 / scale));
+        Size size = small.size();
+        Point[] fallback = null;
+        List<Supplier<Mat>> edgePasses = List.of(() -> strongEdges(gray, scope), () -> weakEdges(gray, scope));
+        for (Supplier<Mat> pass : edgePasses) {
+            for (Point[] quad : findQuads(pass.get(), imageArea, scope)) {
+                if (!touchesBorder(quad, size)) {
+                    return Optional.of(scale(quad, 1 / scale));
+                }
+                if (fallback == null) {
+                    fallback = quad;
+                }
+            }
+        }
+        for (Point[] quad : findQuads(colourRegion(warmth, scope), imageArea, scope)) {
+            if (!touchesBorder(quad, size)) {
+                return Optional.of(scale(quad, 1 / scale));
+            }
+        }
+        return Optional.ofNullable(fallback).map(q -> scale(q, 1 / scale));
+    }
+
+    /** Au moins deux coins à moins de 2 % du bord : probablement la surface sous le document. */
+    private static boolean touchesBorder(Point[] quad, Size size) {
+        long onBorder = Arrays.stream(quad)
+                .filter(p -> p.x < BORDER_MARGIN * size.width || p.y < BORDER_MARGIN * size.height
+                        || p.x > (1 - BORDER_MARGIN) * size.width || p.y > (1 - BORDER_MARGIN) * size.height)
+                .count();
+        return onBorder >= 2;
+    }
+
+    /**
+     * Zone plus « chaude » que son voisinage (papier thermique crème sur feuille blanche) : seuil
+     * adaptatif sur le canal jaune-bleu étiré. Rien si la teinte varie trop peu.
+     */
+    private static Mat colourRegion(Mat warmth, MatScope scope) {
+        Mat blurred = scope.add(new Mat());
+        Imgproc.GaussianBlur(warmth, blurred, new Size(5, 5), 0);
+        Core.MinMaxLocResult range = Core.minMaxLoc(blurred);
+        Mat mask = scope.add(Mat.zeros(warmth.size(), CvType.CV_8UC1));
+        if (range.maxVal - range.minVal < MIN_WARMTH_RANGE) {
+            return mask;
+        }
+        Mat stretched = scope.add(new Mat());
+        Core.normalize(blurred, stretched, 0, 255, Core.NORM_MINMAX);
+        int block = (Math.min(warmth.rows(), warmth.cols()) / 6) | 1;
+        Imgproc.adaptiveThreshold(stretched, mask, 255, Imgproc.ADAPTIVE_THRESH_MEAN_C, Imgproc.THRESH_BINARY, block, -2);
+        Mat kernel = scope.add(Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(9, 9)));
+        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_OPEN, kernel);
+        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel);
+        return mask;
     }
 
     private static Mat strongEdges(Mat gray, MatScope scope) {
@@ -113,7 +172,7 @@ public final class OpenCvImageProcessor implements ImageProcessor {
      * arrondi ramené de force à 4 points est rejeté). Toutes les formes sont essayées à la tolérance
      * stricte avant d'assouplir l'approximation.
      */
-    private static Optional<Point[]> findQuad(Mat edges, double imageArea, MatScope scope) {
+    private static List<Point[]> findQuads(Mat edges, double imageArea, MatScope scope) {
         List<MatOfPoint> contours = new ArrayList<>();
         Imgproc.findContours(edges, contours, scope.add(new Mat()), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
         contours.forEach(scope::add);
@@ -121,15 +180,13 @@ public final class OpenCvImageProcessor implements ImageProcessor {
                 .sorted(Comparator.comparingDouble((MatOfPoint c) -> Imgproc.contourArea(c)).reversed())
                 .limit(5)
                 .toList();
+        List<Point[]> found = new ArrayList<>();
         for (double tolerance : APPROX_TOLERANCES) {
             for (MatOfPoint contour : candidates) {
-                Optional<Point[]> quad = approximateQuad(contour, tolerance, imageArea, scope);
-                if (quad.isPresent()) {
-                    return quad;
-                }
+                approximateQuad(contour, tolerance, imageArea, scope).ifPresent(found::add);
             }
         }
-        return Optional.empty();
+        return found;
     }
 
     private static Optional<Point[]> approximateQuad(MatOfPoint contour, double tolerance, double imageArea,

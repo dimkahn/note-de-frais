@@ -30,37 +30,51 @@ final class DocumentScanner {
   static const _weakCannyLow = 20.0;
   static const _weakCannyHigh = 60.0;
 
+  /// Un coin à moins de 2 % du bord de l'image est considéré « sur le bord ».
+  static const _borderMargin = 0.02;
+
+  /// Écart minimal de teinte (canal b de Lab) pour tenter la passe couleur.
+  static const _minWarmthRange = 6.0;
+
   /// Contour du document dans une image encodée (JPEG/PNG), orientation EXIF appliquée.
   Quad? detect(Uint8List encoded) {
-    final src = cv.imdecode(encoded, cv.IMREAD_GRAYSCALE);
-    try {
-      if (src.isEmpty) return null;
-      final scale = math.min(
-        1.0,
-        _detectionMaxSide / math.max(src.rows, src.cols),
-      );
-      final small = scale < 1
-          ? cv.resize(src, (
-              (src.cols * scale).round(),
-              (src.rows * scale).round(),
-            ), interpolation: cv.INTER_AREA)
-          : src.clone();
-      try {
-        return _detectInGray(small);
-      } finally {
-        small.dispose();
-      }
-    } finally {
+    final src = cv.imdecode(encoded, cv.IMREAD_COLOR);
+    if (src.isEmpty) {
       src.dispose();
+      return null;
+    }
+    final scale = math.min(
+      1.0,
+      _detectionMaxSide / math.max(src.rows, src.cols),
+    );
+    final small = scale < 1
+        ? cv.resize(src, (
+            (src.cols * scale).round(),
+            (src.rows * scale).round(),
+          ), interpolation: cv.INTER_AREA)
+        : src.clone();
+    final gray = cv.cvtColor(small, cv.COLOR_BGR2GRAY);
+    final lab = cv.cvtColor(small, cv.COLOR_BGR2Lab);
+    final channels = cv.split(lab);
+    try {
+      return _detectIn(gray, warmth: channels[2]);
+    } finally {
+      channels.dispose();
+      for (final m in [src, small, gray, lab]) {
+        m.dispose();
+      }
     }
   }
 
   /// Contour dans un plan de luminance brut (plan Y du flux caméra), dans le repère du capteur.
+  /// [blueChroma] : plan U (Cb) déjà échantillonné à la taille réduite de la luminance
+  /// (cf. [sampleChroma]) ; il permet la passe couleur (papier crème sur feuille blanche).
   Quad? detectInLuma(
     Uint8List plane, {
     required int width,
     required int height,
     required int bytesPerRow,
+    Uint8List? blueChroma,
   }) {
     final (small, w, h) = downsampleLuma(
       plane,
@@ -70,10 +84,17 @@ final class DocumentScanner {
       maxSide: liveMaxSide,
     );
     final gray = cv.Mat.fromList(h, w, cv.MatType.CV_8UC1, small);
+    final cb = blueChroma != null && blueChroma.length == w * h
+        ? cv.Mat.fromList(h, w, cv.MatType.CV_8UC1, blueChroma)
+        : null;
+    // Jaune ⇔ peu de bleu : la « chaleur » du papier est l'inverse de Cb.
+    final warmth = cb == null ? null : cv.bitwiseNOT(cb);
     try {
-      return _detectInGray(gray);
+      return _detectIn(gray, warmth: warmth);
     } finally {
       gray.dispose();
+      cb?.dispose();
+      warmth?.dispose();
     }
   }
 
@@ -118,15 +139,77 @@ final class DocumentScanner {
 
   // --- Détection ---
 
-  /// Deux passes : bords francs (fond sombre, seuils d'Otsu), puis, si rien n'est trouvé,
-  /// bords faibles (fond clair : contraste égalisé localement, seuils bas, contour refermé).
-  Quad? _detectInGray(cv.Mat gray) {
+  /// Passes successives, de la plus sûre à la plus permissive : bords francs (fond sombre,
+  /// seuils d'Otsu), bords faibles (fond clair : contraste égalisé, seuils bas), puis couleur
+  /// (canal jaune-bleu : ticket crème sur feuille blanche). Un contour qui touche les bords de
+  /// l'image est probablement la surface sous le document : il ne sert qu'en dernier recours.
+  Quad? _detectIn(cv.Mat gray, {cv.Mat? warmth}) {
     final blurred = cv.gaussianBlur(gray, (5, 5), 0);
     try {
-      return _withEdges(_strongEdges(blurred), gray) ??
-          _withEdges(_weakEdges(blurred), gray);
+      final passes = <(cv.Mat Function(), bool)>[
+        (() => _strongEdges(blurred), true),
+        (() => _weakEdges(blurred), true),
+        if (warmth != null) (() => _colourRegion(warmth), false),
+      ];
+      Quad? fallback;
+      for (final (pass, mayFallBack) in passes) {
+        for (final quad in _quads(pass(), gray)) {
+          if (!_touchesBorder(quad)) return quad;
+          if (mayFallBack) fallback ??= quad;
+        }
+      }
+      return fallback;
     } finally {
       blurred.dispose();
+    }
+  }
+
+  static bool _touchesBorder(Quad q) =>
+      q.corners
+          .where(
+            (c) =>
+                c.x < _borderMargin ||
+                c.y < _borderMargin ||
+                c.x > 1 - _borderMargin ||
+                c.y > 1 - _borderMargin,
+          )
+          .length >=
+      2;
+
+  /// Zone plus « chaude » que son voisinage (papier thermique crème sur feuille blanche), par seuil
+  /// adaptatif sur le canal jaune-bleu étiré : robuste à un éclairage inégal. Rien si la teinte
+  /// varie trop peu dans l'image (pas de papier coloré, seulement du bruit).
+  cv.Mat _colourRegion(cv.Mat warmth) {
+    final blurred = cv.gaussianBlur(warmth, (5, 5), 0);
+    final (min, max, _, _) = cv.minMaxLoc(blurred);
+    if (max - min < _minWarmthRange) {
+      blurred.dispose();
+      return cv.Mat.zeros(warmth.rows, warmth.cols, cv.MatType.CV_8UC1);
+    }
+    final stretched = cv.normalize(
+      blurred,
+      cv.Mat.empty(),
+      alpha: 0,
+      beta: 255,
+      normType: cv.NORM_MINMAX,
+    );
+    final block = (math.min(warmth.rows, warmth.cols) ~/ 6) | 1;
+    final mask = cv.adaptiveThreshold(
+      stretched,
+      255,
+      cv.ADAPTIVE_THRESH_MEAN_C,
+      cv.THRESH_BINARY,
+      block,
+      -2,
+    );
+    final kernel = cv.getStructuringElement(cv.MORPH_RECT, (9, 9));
+    final opened = cv.morphologyEx(mask, cv.MORPH_OPEN, kernel);
+    try {
+      return cv.morphologyEx(opened, cv.MORPH_CLOSE, kernel);
+    } finally {
+      for (final m in [blurred, stretched, mask, kernel, opened]) {
+        m.dispose();
+      }
     }
   }
 
@@ -164,15 +247,16 @@ final class DocumentScanner {
     }
   }
 
-  /// Contour à 4 coins, convexe, d'une aire plausible, qui remplit son quadrilatère (un objet
-  /// arrondi ramené de force à 4 points est rejeté). Toutes les formes sont essayées à la
-  /// tolérance stricte avant d'assouplir l'approximation (bords irréguliers, coins arrondis).
-  Quad? _withEdges(cv.Mat edges, cv.Mat gray) {
+  /// Contours à 4 coins, convexes, d'une aire plausible, qui remplissent leur quadrilatère (un
+  /// objet arrondi ramené de force à 4 points est rejeté), du plus sûr au moins sûr : toutes les
+  /// formes à la tolérance stricte, puis tolérances assouplies (bords irréguliers, coins arrondis).
+  List<Quad> _quads(cv.Mat edges, cv.Mat gray) {
     final (contours, hierarchy) = cv.findContours(
       edges,
       cv.RETR_EXTERNAL,
       cv.CHAIN_APPROX_SIMPLE,
     );
+    final found = <Quad>[];
     try {
       final imageArea = (gray.rows * gray.cols).toDouble();
       final candidates =
@@ -195,16 +279,18 @@ final class DocumentScanner {
             if (ratio < _minAreaRatio || ratio > _maxAreaRatio) continue;
             final fill = cv.contourArea(contour) / quadArea;
             if ((fill - 1).abs() > _maxFillGap) continue;
-            return Quad.fromUnordered([
-              for (final p in approx.toList())
-                Corner(p.x / gray.cols, p.y / gray.rows),
-            ]);
+            found.add(
+              Quad.fromUnordered([
+                for (final p in approx.toList())
+                  Corner(p.x / gray.cols, p.y / gray.rows),
+              ]),
+            );
           } finally {
             approx.dispose();
           }
         }
       }
-      return null;
+      return found;
     } finally {
       edges.dispose();
       contours.dispose();
@@ -306,14 +392,38 @@ Future<Quad?> detectInBackground(
   Uint8List luma, {
   required int width,
   required int height,
+  Uint8List? blueChroma,
 }) => Isolate.run(
   () => const DocumentScanner().detectInLuma(
     luma,
     width: width,
     height: height,
     bytesPerRow: width,
+    blueChroma: blueChroma,
   ),
 );
+
+/// Échantillonne le plan U (Cb) d'un flux YUV 4:2:0 (demi-résolution ; [pixelStride] 2 quand U et V
+/// sont entrelacés, comme en NV12 sur iOS) à la taille [width] x [height] de la luminance réduite.
+Uint8List sampleChroma(
+  Uint8List plane, {
+  required int lumaWidth,
+  required int lumaHeight,
+  required int bytesPerRow,
+  required int pixelStride,
+  required int width,
+  required int height,
+}) {
+  final out = Uint8List(width * height);
+  for (var y = 0; y < height; y++) {
+    final row = (y * lumaHeight ~/ height) ~/ 2 * bytesPerRow;
+    for (var x = 0; x < width; x++) {
+      out[y * width + x] =
+          plane[row + (x * lumaWidth ~/ width) ~/ 2 * pixelStride];
+    }
+  }
+  return out;
+}
 
 /// Réduit un plan de luminance (avec pas de ligne éventuel) à [maxSide] pixels au plus, par
 /// échantillonnage : rapide et suffisant pour la détection en direct.

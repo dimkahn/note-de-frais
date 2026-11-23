@@ -51,6 +51,23 @@ class OpenCvImageProcessorTest {
     }
 
     @Test
+    void photo_reelle_ticket_creme_pose_sur_une_feuille_blanche() throws IOException {
+        // Aperçu caméra capturé sur un téléphone : peu de contraste, la feuille dépasse du cadre.
+        byte[] photo;
+        try (var in = getClass().getResourceAsStream("/fixtures/ticket_sur_feuille_blanche.jpg")) {
+            photo = in.readAllBytes();
+        }
+
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        // Ticket ≈ 54 % x 84 % d'une image de 1220 x 1626.
+        assertThat(out.getWidth()).isBetween(560, 720);
+        assertThat(out.getHeight()).isBetween(1260, 1440);
+    }
+
+    @Test
     void recadre_un_ticket_blanc_pose_sur_du_bois_clair() throws IOException {
         byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
                 new Color(215, 190, 150), new Color(245, 242, 238));

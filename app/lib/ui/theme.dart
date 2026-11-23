@@ -61,10 +61,8 @@ abstract final class AppTheme {
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: text.titleLarge?.copyWith(
-          fontWeight: FontWeight.w800,
-          color: scheme.onSurface,
-        ),
+        // Pas de couleur imposée : `foregroundColor` (ex. blanc sur l'écran caméra) s'applique.
+        titleTextStyle: text.titleLarge?.copyWith(fontWeight: FontWeight.w800),
       ),
       cardTheme: CardThemeData(
         elevation: 0,

@@ -97,6 +97,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_analyzing || _capturing) return;
     _analyzing = true;
     final (Uint8List, int, int) sample;
+    Uint8List? chroma;
     try {
       final plane = frame.planes.first; // plan Y = luminance
       sample = downsampleLuma(
@@ -106,6 +107,19 @@ class _CameraScreenState extends State<CameraScreen>
         bytesPerRow: plane.bytesPerRow,
         maxSide: DocumentScanner.liveMaxSide,
       );
+      if (frame.planes.length > 1) {
+        // Plan U (Cb) : sert à repérer un papier crème sur une feuille blanche.
+        final u = frame.planes[1];
+        chroma = sampleChroma(
+          u.bytes,
+          lumaWidth: frame.width,
+          lumaHeight: frame.height,
+          bytesPerRow: u.bytesPerRow,
+          pixelStride: u.bytesPerPixel ?? 1,
+          width: sample.$2,
+          height: sample.$3,
+        );
+      }
     } on Object catch (e, st) {
       _onDetectionError(e, st);
       _analyzing = false;
@@ -113,7 +127,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     final (small, width, height) = sample;
     final rotation = _controller?.description.sensorOrientation ?? 90;
-    detectInBackground(small, width: width, height: height)
+    detectInBackground(small, width: width, height: height, blueChroma: chroma)
         .then(
           (quad) => _onDetected(quad?.rotated(rotation)),
           onError: _onDetectionError,
