@@ -1,6 +1,7 @@
 app:
   storage-dir: ${java.io.tmpdir}/notedefrais-test-storage
   api-token: ""
+  session-ttl: 1d
   claude:
     enabled: false
     model: claude-opus-5-5

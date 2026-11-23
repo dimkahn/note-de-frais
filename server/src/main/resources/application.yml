@@ -1,8 +1,10 @@
 app:
   # Justificatifs : <storage-dir>/<id>/original.<ext> (jamais modifié) et processed.jpg
   storage-dir: ${NDF_STORAGE_DIR:./storage}
-  # Jeton exigé dans l'en-tête X-Api-Token ; vide = pas de contrôle (développement local uniquement)
+  # Jeton d'administration, exigé dans l'en-tête X-Api-Token sur /api/admin/** ; vide = administration fermée
   api-token: ${NDF_API_TOKEN:}
+  # Durée de validité d'une session (connexion e-mail / mot de passe), format ISO-8601 ou 30d
+  session-ttl: ${NDF_SESSION_TTL:90d}
   claude:
     enabled: ${NDF_CLAUDE_ENABLED:true}
     model: ${NDF_CLAUDE_MODEL:claude-opus-5-5}

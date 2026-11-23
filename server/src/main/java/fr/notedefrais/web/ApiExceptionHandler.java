@@ -1,5 +1,8 @@
 package fr.notedefrais.web;
 
+import fr.notedefrais.account.EmailAlreadyUsedException;
+import fr.notedefrais.account.InvalidCredentialsException;
+import fr.notedefrais.account.InvalidPasswordException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
 import fr.notedefrais.imaging.InvalidQuadException;
 import fr.notedefrais.storage.OriginalAlreadyExistsException;
@@ -40,6 +43,21 @@ public class ApiExceptionHandler {
     @ExceptionHandler(OriginalAlreadyExistsException.class)
     ProblemDetail conflict(OriginalAlreadyExistsException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(EmailAlreadyUsedException.class)
+    ProblemDetail emailTaken(EmailAlreadyUsedException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidPasswordException.class)
+    ProblemDetail invalidPassword(InvalidPasswordException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    ProblemDetail invalidCredentials(InvalidCredentialsException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
     }
 
     @ExceptionHandler(StorageException.class)

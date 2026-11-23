@@ -11,7 +11,10 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
-/** Protection minimale de l'API par jeton partagé (en-tête X-Api-Token). */
+/**
+ * Jeton d'administration (en-tête X-Api-Token) exigé sur {@code /api/admin/**}.
+ * Sans jeton configuré, l'administration est fermée. Les utilisateurs passent par leur session.
+ */
 @Component
 @EnableConfigurationProperties(AppProperties.class)
 public class ApiTokenFilter extends OncePerRequestFilter {
@@ -25,15 +28,16 @@ public class ApiTokenFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return expected == null || !request.getRequestURI().startsWith("/api/");
+        return !request.getRequestURI().startsWith("/api/admin/");
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
         String given = req.getHeader("X-Api-Token");
-        if (given == null || !MessageDigest.isEqual(expected, given.getBytes(StandardCharsets.UTF_8))) {
-            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Jeton API invalide");
+        if (expected == null || given == null
+                || !MessageDigest.isEqual(expected, given.getBytes(StandardCharsets.UTF_8))) {
+            res.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Jeton d'administration invalide");
             return;
         }
         chain.doFilter(req, res);

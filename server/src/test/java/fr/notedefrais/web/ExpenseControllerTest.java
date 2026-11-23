@@ -7,6 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import fr.notedefrais.account.AccountService;
 import fr.notedefrais.expense.*;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
 import fr.notedefrais.imaging.Quad;
@@ -14,7 +15,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -22,21 +25,35 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @WebMvcTest(ExpenseController.class)
 class ExpenseControllerTest {
+
+    static final UUID OWNER = UUID.randomUUID();
+    static final RequestPostProcessor SESSION = request -> {
+        request.addHeader("Authorization", "Bearer jeton");
+        return request;
+    };
 
     @Autowired
     MockMvc mvc;
     @MockitoBean
     ExpenseService service;
+    @MockitoBean
+    AccountService accounts;
+
+    @BeforeEach
+    void authenticate() {
+        given(accounts.authenticate("jeton")).willReturn(Optional.of(OWNER));
+    }
 
     @Test
     void l_envoi_d_un_justificatif_repond_202_avec_la_depense_en_attente() throws Exception {
         var id = UUID.randomUUID();
         given(service.register(eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW), eq(null))).willReturn(new Expense(id));
 
-        mvc.perform(multipart("/api/expenses")
+        mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1, 2}))
                         .param("id", id.toString())
                         .param("filter", "SCAN_BW"))
@@ -52,7 +69,7 @@ class ExpenseControllerTest {
         var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
         given(service.register(eq(id), any(), eq("image/jpeg"), any(), eq(quad))).willReturn(new Expense(id));
 
-        mvc.perform(multipart("/api/expenses")
+        mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
                         .param("id", id.toString())
                         .param("corners", quad.format()))
@@ -61,7 +78,7 @@ class ExpenseControllerTest {
 
     @Test
     void refuse_des_coins_invalides() throws Exception {
-        mvc.perform(multipart("/api/expenses")
+        mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
                         .param("corners", "0,0,1,1,1,0,0,1"))
                 .andExpect(status().isBadRequest());
@@ -69,14 +86,14 @@ class ExpenseControllerTest {
 
     @Test
     void refuse_un_fichier_qui_n_est_pas_une_image() throws Exception {
-        mvc.perform(multipart("/api/expenses")
+        mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[]{1})))
                 .andExpect(status().isUnsupportedMediaType());
     }
 
     @Test
     void refuse_un_fichier_vide() throws Exception {
-        mvc.perform(multipart("/api/expenses")
+        mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "x.jpg", "image/jpeg", new byte[0])))
                 .andExpect(status().isBadRequest());
     }
@@ -90,7 +107,7 @@ class ExpenseControllerTest {
         var criteria = new Criteria(Category.HOTEL, "Lyon", null, null, LocalDate.of(2026, 3, 1), null, null);
         given(service.search(criteria)).willReturn(List.of(e));
 
-        mvc.perform(get("/api/expenses").param("category", "HOTEL").param("city", "Lyon").param("from", "2026-03-01"))
+        mvc.perform(get("/api/expenses").with(SESSION).param("category", "HOTEL").param("city", "Lyon").param("from", "2026-03-01"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].merchant").value("Ibis"))
                 .andExpect(jsonPath("$[0].amountTotal").value(89.00))
@@ -102,7 +119,7 @@ class ExpenseControllerTest {
         given(service.summary(any(), eq(ExpenseSummary.GroupBy.CITY)))
                 .willReturn(List.of(new ExpenseSummary.Group("Lyon", 2, Map.of("EUR", new BigDecimal("100.00")))));
 
-        mvc.perform(get("/api/expenses/summary").param("groupBy", "CITY"))
+        mvc.perform(get("/api/expenses/summary").with(SESSION).param("groupBy", "CITY"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].key").value("Lyon"))
                 .andExpect(jsonPath("$[0].count").value(2))
@@ -114,12 +131,12 @@ class ExpenseControllerTest {
         var id = UUID.randomUUID();
         given(service.get(id)).willThrow(new ExpenseNotFoundException(id));
 
-        mvc.perform(get("/api/expenses/{id}", id)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/expenses/{id}", id).with(SESSION)).andExpect(status().isNotFound());
     }
 
     @Test
     void la_modification_valide_les_champs() throws Exception {
-        mvc.perform(put("/api/expenses/{id}", UUID.randomUUID())
+        mvc.perform(put("/api/expenses/{id}", UUID.randomUUID()).with(SESSION)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"currency\":\"euros\"}"))
                 .andExpect(status().isBadRequest());
@@ -130,7 +147,7 @@ class ExpenseControllerTest {
         var id = UUID.randomUUID();
         given(service.update(eq(id), any())).willReturn(new Expense(id));
 
-        mvc.perform(put("/api/expenses/{id}", id)
+        mvc.perform(put("/api/expenses/{id}", id).with(SESSION)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"merchant\":\"Ibis\",\"category\":\"HOTEL\",\"amountTotal\":89.00,\"currency\":\"EUR\"}"))
                 .andExpect(status().isOk());
@@ -144,7 +161,7 @@ class ExpenseControllerTest {
         var id = UUID.randomUUID();
         given(service.update(eq(id), any())).willReturn(new Expense(id));
 
-        mvc.perform(put("/api/expenses/{id}", id)
+        mvc.perform(put("/api/expenses/{id}", id).with(SESSION)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"amountTotal\":\"0.10\",\"expenseDate\":\"2026-03-10\"}"))
                 .andExpect(status().isOk());
@@ -161,7 +178,7 @@ class ExpenseControllerTest {
         given(service.get(id)).willReturn(e);
         given(service.original(id)).willReturn(new byte[]{7});
 
-        mvc.perform(get("/api/expenses/{id}/original", id))
+        mvc.perform(get("/api/expenses/{id}/original", id).with(SESSION))
                 .andExpect(status().isOk())
                 .andExpect(content().contentType("image/png"))
                 .andExpect(content().bytes(new byte[]{7}));
@@ -171,7 +188,7 @@ class ExpenseControllerTest {
     void la_suppression_repond_204() throws Exception {
         var id = UUID.randomUUID();
 
-        mvc.perform(delete("/api/expenses/{id}", id)).andExpect(status().isNoContent());
+        mvc.perform(delete("/api/expenses/{id}", id).with(SESSION)).andExpect(status().isNoContent());
 
         verify(service).delete(id);
     }
