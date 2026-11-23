@@ -7,7 +7,9 @@ import '../domain/expense_query.dart';
 import 'capture.dart';
 import 'expense_detail_screen.dart';
 import 'expense_tile.dart';
+import 'export_button.dart';
 import 'format.dart';
+import 'report.dart';
 import 'theme.dart';
 import 'ticket.dart';
 
@@ -41,6 +43,8 @@ class _HomeScreenState extends State<HomeScreen> {
             SliverAppBar.large(
               title: const Text('Dépenses'),
               actions: [
+                if (filtered.isNotEmpty)
+                  ExportButton.report(reportOf(filtered)),
                 if (repo.settings.isConfigured) _SyncButton(repo: repo),
               ],
             ),

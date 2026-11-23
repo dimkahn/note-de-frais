@@ -27,6 +27,8 @@ final class _FolderInTemp implements DownloadsFolder {
 }
 
 void main() {
+  // Les polices du PDF sont lues dans les assets de l'app.
+  TestWidgetsFlutterBinding.ensureInitialized();
   late Directory dir;
   late Directory downloads;
   late _FakeSharer sharer;
@@ -160,4 +162,47 @@ void main() {
       expect(saved.every((f) => f.parent.path == downloads.path), isTrue);
     });
   });
+
+  test(
+    'la note de frais : une synthèse puis une page par justificatif',
+    () async {
+      final report = ExpenseReport(
+        title: 'Note de frais — mars 2026',
+        totals: '25,50 €',
+        lines: [
+          ReportLine(
+            date: '2 mars 2026',
+            merchant: 'Café de la Gare',
+            category: 'Restaurant',
+            total: '5,50 €',
+            vat: '—',
+            caption: '2 mars 2026 · Café de la Gare · 5,50 €',
+            imagePath: jpeg('a', 600, 800),
+          ),
+          ReportLine(
+            date: '10 mars 2026',
+            merchant: 'Hôtel',
+            category: 'Hôtel',
+            total: '20,00 €',
+            vat: '1,82 €',
+            caption: '10 mars 2026 · Hôtel · 20,00 €',
+            imagePath: jpeg('b', 800, 600),
+          ),
+          const ReportLine(
+            date: '11 mars 2026',
+            merchant: 'Sans photo',
+            category: 'Autre',
+            total: '0,00 €',
+            vat: '—',
+            caption: '',
+            imagePath: null,
+          ),
+        ],
+      );
+
+      final pdf = await export.buildReport(report);
+
+      expect(pageCount(pdf), 3);
+    },
+  );
 }

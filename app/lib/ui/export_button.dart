@@ -37,22 +37,28 @@ enum _ExportAction {
 /// Menu « Exporter » : PDF ou photos recadrées, par le menu de partage ou directement dans
 /// Téléchargements.
 class ExportButton extends StatelessWidget {
-  const ExportButton({
-    super.key,
-    required this.title,
-    required this.imagePaths,
-  });
+  const ExportButton({super.key, required this.title, required this.imagePaths})
+    : report = null,
+      tooltip = 'Exporter';
+
+  /// Note de frais : le PDF devient la synthèse suivie des justificatifs.
+  ExportButton.report(ExpenseReport this.report, {super.key})
+    : title = report.title,
+      imagePaths = report.imagePaths,
+      tooltip = 'Exporter la note de frais';
 
   final String title;
+  final ExpenseReport? report;
+  final String tooltip;
 
   /// Images recadrées, dans l'ordre des pages.
   final List<String> imagePaths;
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<_ExportAction>(
-    tooltip: 'Exporter',
+    tooltip: tooltip,
     icon: const Icon(Icons.ios_share),
-    enabled: imagePaths.isNotEmpty,
+    enabled: report != null || imagePaths.isNotEmpty,
     onSelected: (action) => _export(context, action),
     itemBuilder: (_) => [
       for (final action in _ExportAction.values) ...[
@@ -72,15 +78,21 @@ class ExportButton extends StatelessWidget {
   Future<void> _export(BuildContext context, _ExportAction action) async {
     final export = context.read<ExportService>();
     final messenger = ScaffoldMessenger.of(context);
+    final report = this.report;
     try {
       final saved = switch (action) {
         _ExportAction.sharePdf => await _share(
-          export.sharePdf(title, imagePaths),
+          report != null
+              ? export.shareReport(report)
+              : export.sharePdf(title, imagePaths),
         ),
         _ExportAction.sharePhotos => await _share(
           export.sharePhotos(title, imagePaths),
         ),
-        _ExportAction.savePdf => await export.savePdf(title, imagePaths),
+        _ExportAction.savePdf =>
+          report != null
+              ? await export.saveReport(report)
+              : await export.savePdf(title, imagePaths),
         _ExportAction.savePhotos => await export.savePhotos(title, imagePaths),
       };
       if (saved.isNotEmpty) {

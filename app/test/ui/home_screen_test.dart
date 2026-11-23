@@ -228,6 +228,28 @@ void main() {
 
     expect(sharer.shared.single.uri.pathSegments.last, 'Le Bistrot.pdf');
   });
+
+  testWidgets('exporte la note de frais de la liste filtrée', (tester) async {
+    await pumpHome(tester, [
+      expense('a', 'Le Bistrot', ExpenseCategory.restaurant, 'Paris', '20.00'),
+      expense('b', 'Ibis', ExpenseCategory.hotel, 'Lyon', '90.00'),
+    ]);
+
+    await tester.tap(find.byTooltip('Exporter la note de frais'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Partager le PDF'));
+    for (var i = 0; i < 40 && sharer.shared.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+
+    expect(
+      sharer.shared.single.uri.pathSegments.last,
+      'Note de frais — mars 2026.pdf',
+    );
+  });
 }
 
 final class _FakeSharer implements FileSharer {
