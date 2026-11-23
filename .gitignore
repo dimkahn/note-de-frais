@@ -7,3 +7,5 @@ app/build/
 app/.dart_tool/
 .idea/
 *.iml
+app/flutter_*.log
+app/android/.kotlin/
