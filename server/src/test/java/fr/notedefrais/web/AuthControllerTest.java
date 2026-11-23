@@ -2,8 +2,10 @@ package fr.notedefrais.web;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -114,6 +116,71 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("alice@example.com"))
                 .andExpect(jsonPath("$.plan").value("FREE"));
+    }
+
+    @Test
+    void un_compte_connecte_obtient_une_cle_d_appareil_pour_son_libelle() throws Exception {
+        var accountId = UUID.randomUUID();
+        given(service.authenticate("jeton")).willReturn(Optional.of(accountId));
+        given(service.registerDevice(accountId, "Pixel 8")).willReturn("cle-appareil");
+
+        mvc.perform(post("/api/auth/devices").header("Authorization", "Bearer jeton")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"label\":\"Pixel 8\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.deviceKey").value("cle-appareil"));
+    }
+
+    @Test
+    void une_cle_d_appareil_ne_s_obtient_pas_sans_session() throws Exception {
+        mvc.perform(post("/api/auth/devices")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"label\":\"Pixel 8\"}"))
+                .andExpect(status().isUnauthorized());
+
+        verify(service, never()).registerDevice(any(), any());
+    }
+
+    @Test
+    void une_cle_d_appareil_exige_un_libelle() throws Exception {
+        given(service.authenticate("jeton")).willReturn(Optional.of(UUID.randomUUID()));
+
+        mvc.perform(post("/api/auth/devices").header("Authorization", "Bearer jeton")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"label\":\" \"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(service, never()).registerDevice(any(), any());
+    }
+
+    @Test
+    void la_connexion_par_cle_d_appareil_repond_200_avec_un_jeton_sans_session_prealable() throws Exception {
+        given(service.deviceLogin("cle-appareil"))
+                .willReturn(new Authentication("jeton", TestAccounts.free("alice@example.com")));
+
+        mvc.perform(post("/api/auth/device-login")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"deviceKey\":\"cle-appareil\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").value("jeton"))
+                .andExpect(jsonPath("$.account.email").value("alice@example.com"));
+    }
+
+    @Test
+    void une_cle_d_appareil_inconnue_ou_revoquee_repond_401() throws Exception {
+        given(service.deviceLogin(any())).willThrow(new InvalidDeviceKeyException());
+
+        mvc.perform(post("/api/auth/device-login")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"deviceKey\":\"revoquee\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void la_revocation_de_la_cle_de_l_appareil_repond_204() throws Exception {
+        var accountId = UUID.randomUUID();
+        given(service.authenticate("jeton")).willReturn(Optional.of(accountId));
+
+        mvc.perform(delete("/api/auth/devices/current").header("Authorization", "Bearer jeton")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"deviceKey\":\"cle-appareil\"}"))
+                .andExpect(status().isNoContent());
+
+        verify(service).revokeDevice(accountId, "cle-appareil");
     }
 
     private static MockHttpServletRequestBuilder json(MockHttpServletRequestBuilder request, String email,

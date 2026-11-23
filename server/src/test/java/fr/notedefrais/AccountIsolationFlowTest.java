@@ -4,6 +4,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.jayway.jsonpath.JsonPath;
 import fr.notedefrais.imaging.TestImages;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -60,6 +61,31 @@ class AccountIsolationFlowTest {
         mvc.perform(post("/api/auth/logout").with(session)).andExpect(status().isNoContent());
 
         mvc.perform(get("/api/account").with(session)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void la_cle_d_appareil_reconnecte_apres_la_deconnexion_jusqu_a_sa_revocation() throws Exception {
+        var session = TestSessions.bearer(TestSessions.signUpToken(mvc));
+        String issued = mvc.perform(post("/api/auth/devices").with(session)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"label\":\"Pixel 8\"}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String deviceKeyBody = "{\"deviceKey\":\"%s\"}".formatted(JsonPath.<String>read(issued, "$.deviceKey"));
+        mvc.perform(post("/api/auth/logout").with(session)).andExpect(status().isNoContent());
+
+        String reconnected = mvc.perform(post("/api/auth/device-login")
+                        .contentType(MediaType.APPLICATION_JSON).content(deviceKeyBody))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var newSession = TestSessions.bearer(JsonPath.read(reconnected, "$.token"));
+        mvc.perform(get("/api/account").with(newSession)).andExpect(status().isOk());
+        mvc.perform(delete("/api/auth/devices/current").with(newSession)
+                        .contentType(MediaType.APPLICATION_JSON).content(deviceKeyBody))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(post("/api/auth/device-login")
+                        .contentType(MediaType.APPLICATION_JSON).content(deviceKeyBody))
+                .andExpect(status().isUnauthorized());
     }
 
     private UUID upload(RequestPostProcessor session) throws Exception {

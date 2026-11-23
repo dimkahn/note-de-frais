@@ -29,6 +29,8 @@ class AccountServiceTest {
     AccountRepository accounts;
     @Autowired
     SessionRepository sessions;
+    @Autowired
+    DeviceKeyRepository devices;
 
     // Coût minimal : le test vérifie le comportement, pas la robustesse du hash.
     final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(4);
@@ -167,7 +169,83 @@ class AccountServiceTest {
         assertThat(found.getPlan()).isEqualTo(Plan.FREE);
     }
 
+    @Test
+    void la_cle_d_appareil_ouvre_une_nouvelle_session_du_compte() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+        String deviceKey = service.registerDevice(alice.getId(), "Pixel 8");
+
+        Authentication auth = service.deviceLogin(deviceKey);
+
+        assertThat(auth.account().getId()).isEqualTo(alice.getId());
+        assertThat(service.authenticate(auth.token())).contains(alice.getId());
+    }
+
+    @Test
+    void seul_le_hash_sha256_de_la_cle_d_appareil_est_stocke_avec_son_libelle() throws Exception {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+
+        String deviceKey = service.registerDevice(alice.getId(), "Pixel 8");
+
+        String expectedHash = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(deviceKey.getBytes(StandardCharsets.UTF_8)));
+        assertThat(devices.findAll()).singleElement().satisfies(device -> {
+            assertThat(device.getKeyHash()).isEqualTo(expectedHash);
+            assertThat(device.getAccountId()).isEqualTo(alice.getId());
+            assertThat(device.getLabel()).isEqualTo("Pixel 8");
+            assertThat(device.getCreatedAt()).isEqualTo(NOW);
+        });
+    }
+
+    @Test
+    void la_cle_d_appareil_fait_256_bits_aleatoires() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+
+        String first = service.registerDevice(alice.getId(), "Pixel 8");
+        String second = service.registerDevice(alice.getId(), "Tablette");
+
+        assertThat(first).isNotEqualTo(second);
+        assertThat(Base64.getUrlDecoder().decode(first)).hasSize(32);
+    }
+
+    @Test
+    void une_cle_d_appareil_inconnue_est_refusee() {
+        assertThatThrownBy(() -> service.deviceLogin("inconnue"))
+                .isInstanceOf(InvalidDeviceKeyException.class);
+    }
+
+    @Test
+    void une_cle_d_appareil_revoquee_est_refusee() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+        String deviceKey = service.registerDevice(alice.getId(), "Pixel 8");
+
+        service.revokeDevice(alice.getId(), deviceKey);
+
+        assertThatThrownBy(() -> service.deviceLogin(deviceKey))
+                .isInstanceOf(InvalidDeviceKeyException.class);
+    }
+
+    @Test
+    void un_compte_ne_peut_pas_revoquer_la_cle_d_appareil_d_un_autre() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+        var bob = service.register("bob@example.com", PASSWORD).account();
+        String deviceKey = service.registerDevice(alice.getId(), "Pixel 8");
+
+        service.revokeDevice(bob.getId(), deviceKey);
+
+        assertThat(service.deviceLogin(deviceKey).account().getId()).isEqualTo(alice.getId());
+    }
+
+    @Test
+    void la_deconnexion_conserve_la_cle_d_appareil() {
+        var auth = service.register("alice@example.com", PASSWORD);
+        String deviceKey = service.registerDevice(auth.account().getId(), "Pixel 8");
+
+        service.logout(auth.token());
+
+        assertThat(service.deviceLogin(deviceKey).account().getId()).isEqualTo(auth.account().getId());
+    }
+
     private AccountService serviceAt(Instant now) {
-        return new AccountService(accounts, sessions, encoder, Clock.fixed(now, ZoneOffset.UTC), TTL);
+        return new AccountService(accounts, sessions, devices, encoder, Clock.fixed(now, ZoneOffset.UTC), TTL);
     }
 }

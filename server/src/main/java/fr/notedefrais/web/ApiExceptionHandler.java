@@ -2,6 +2,7 @@ package fr.notedefrais.web;
 
 import fr.notedefrais.account.EmailAlreadyUsedException;
 import fr.notedefrais.account.InvalidCredentialsException;
+import fr.notedefrais.account.InvalidDeviceKeyException;
 import fr.notedefrais.account.InvalidPasswordException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
 import fr.notedefrais.imaging.InvalidQuadException;
@@ -57,6 +58,11 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(InvalidCredentialsException.class)
     ProblemDetail invalidCredentials(InvalidCredentialsException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidDeviceKeyException.class)
+    ProblemDetail invalidDeviceKey(InvalidDeviceKeyException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
     }
 

@@ -4,6 +4,7 @@ import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import fr.notedefrais.account.AccountRepository;
 import fr.notedefrais.account.AccountService;
+import fr.notedefrais.account.DeviceKeyRepository;
 import fr.notedefrais.account.SessionRepository;
 import fr.notedefrais.extraction.ClaudeReceiptExtractor;
 import fr.notedefrais.extraction.DisabledReceiptExtractor;
@@ -29,8 +30,10 @@ public class InfrastructureConfig {
     }
 
     @Bean
-    AccountService accountService(AccountRepository accounts, SessionRepository sessions, AppProperties props) {
-        return new AccountService(accounts, sessions, new BCryptPasswordEncoder(), Clock.systemUTC(), props.sessionTtl());
+    AccountService accountService(AccountRepository accounts, SessionRepository sessions, DeviceKeyRepository devices,
+                                  AppProperties props) {
+        return new AccountService(accounts, sessions, devices, new BCryptPasswordEncoder(), Clock.systemUTC(),
+                props.sessionTtl());
     }
 
     @Bean

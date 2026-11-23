@@ -14,8 +14,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Exige une session valide ({@code Authorization: Bearer <jeton>}) sur l'API, sauf pour l'inscription,
- * la connexion et l'administration (protégée par son propre jeton). Le compte authentifié est exposé
- * aux contrôleurs dans l'attribut de requête {@link #ACCOUNT_ID}.
+ * les connexions (mot de passe ou clé d'appareil) et l'administration (protégée par son propre jeton).
+ * Le compte authentifié est exposé aux contrôleurs dans l'attribut de requête {@link #ACCOUNT_ID}.
  */
 @Component
 public class SessionAuthenticationFilter extends OncePerRequestFilter {
@@ -23,7 +23,7 @@ public class SessionAuthenticationFilter extends OncePerRequestFilter {
     public static final String ACCOUNT_ID = "fr.notedefrais.accountId";
     public static final String TOKEN = "fr.notedefrais.sessionToken";
 
-    private static final Set<String> PUBLIC = Set.of("/api/auth/register", "/api/auth/login");
+    private static final Set<String> PUBLIC = Set.of("/api/auth/register", "/api/auth/login", "/api/auth/device-login");
     private static final String BEARER = "Bearer ";
 
     private final AccountService accounts;

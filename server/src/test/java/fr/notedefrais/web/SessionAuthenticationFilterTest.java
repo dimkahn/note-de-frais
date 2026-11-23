@@ -62,8 +62,8 @@ class SessionAuthenticationFilterTest {
     }
 
     @Test
-    void l_inscription_et_la_connexion_restent_accessibles_sans_jeton() throws Exception {
-        for (String uri : new String[]{"/api/auth/register", "/api/auth/login"}) {
+    void l_inscription_et_les_connexions_restent_accessibles_sans_jeton() throws Exception {
+        for (String uri : new String[]{"/api/auth/register", "/api/auth/login", "/api/auth/device-login"}) {
             var chain = new MockFilterChain();
 
             filter.doFilter(request(uri, null), new MockHttpServletResponse(), chain);
