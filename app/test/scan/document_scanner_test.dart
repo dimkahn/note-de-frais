@@ -205,6 +205,53 @@ void main() {
       },
     );
 
+    test(
+      'trouve un ticket dont un coin chevauche un objet sombre (clavier)',
+      () {
+        // Bureau en bois, clavier noir en haut ; le coin haut-gauche du ticket est posé dessus :
+        // les bords du ticket et du clavier se touchent.
+        final img = cv.Mat.fromScalar(
+          1400,
+          1000,
+          cv.MatType.CV_8UC3,
+          cv.Scalar(40, 75, 120),
+        );
+        cv.rectangle(
+          img,
+          cv.Rect(-50, 30, 1000, 300),
+          cv.Scalar(25, 25, 25),
+          thickness: -1,
+        );
+        final receipt = cv.VecVecPoint.fromList([
+          [
+            cv.Point(290, 220),
+            cv.Point(750, 250),
+            cv.Point(740, 1250),
+            cv.Point(250, 1230),
+          ],
+        ]);
+        cv.fillPoly(img, receipt, cv.Scalar(232, 236, 238));
+        for (var y = 420; y < 1100; y += 50) {
+          cv.rectangle(
+            img,
+            cv.Rect(330, y, 300, 12),
+            cv.Scalar(90, 90, 90),
+            thickness: -1,
+          );
+        }
+        final (_, photo) = cv.imencode('.jpg', img);
+        img.dispose();
+
+        final quad = scanner.detect(photo);
+
+        expect(quad, isNotNull);
+        expect(quad!.topLeft.x, closeTo(0.29, 0.03));
+        expect(quad.topLeft.y, closeTo(220 / 1400, 0.03));
+        expect(quad.bottomRight.x, closeTo(0.74, 0.03));
+        expect(quad.bottomRight.y, closeTo(1250 / 1400, 0.03));
+      },
+    );
+
     test('trouve un ticket blanc posé sur du bois clair', () {
       final quad = scanner.detect(
         photoOnLightBackground(

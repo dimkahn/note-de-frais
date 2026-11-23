@@ -40,6 +40,11 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     private static final double MAX_FILL_GAP = 0.15;
     /** Un coin à moins de 2 % du bord de l'image est considéré « sur le bord ». */
     private static final double BORDER_MARGIN = 0.02;
+    /**
+     * Contours examinés par passe, contours intérieurs compris : quand le bord d'un ticket touche
+     * celui d'un autre objet, le bord extérieur fusionne mais le bord intérieur reste un quadrilatère.
+     */
+    private static final int MAX_CANDIDATES = 10;
     /** Écart minimal de teinte (canal b de Lab) pour tenter la passe couleur. */
     private static final double MIN_WARMTH_RANGE = 6;
     /** Passe « fond clair ». */
@@ -174,11 +179,11 @@ public final class OpenCvImageProcessor implements ImageProcessor {
      */
     private static List<Point[]> findQuads(Mat edges, double imageArea, MatScope scope) {
         List<MatOfPoint> contours = new ArrayList<>();
-        Imgproc.findContours(edges, contours, scope.add(new Mat()), Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+        Imgproc.findContours(edges, contours, scope.add(new Mat()), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
         contours.forEach(scope::add);
         List<MatOfPoint> candidates = contours.stream()
                 .sorted(Comparator.comparingDouble((MatOfPoint c) -> Imgproc.contourArea(c)).reversed())
-                .limit(5)
+                .limit(MAX_CANDIDATES)
                 .toList();
         List<Point[]> found = new ArrayList<>();
         for (double tolerance : APPROX_TOLERANCES) {

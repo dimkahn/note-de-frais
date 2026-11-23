@@ -33,6 +33,9 @@ final class DocumentScanner {
   /// Un coin à moins de 2 % du bord de l'image est considéré « sur le bord ».
   static const _borderMargin = 0.02;
 
+  /// Contours examinés par passe (les plus grands).
+  static const _maxCandidates = 10;
+
   /// Écart minimal de teinte (canal b de Lab) pour tenter la passe couleur.
   static const _minWarmthRange = 6.0;
 
@@ -250,10 +253,13 @@ final class DocumentScanner {
   /// Contours à 4 coins, convexes, d'une aire plausible, qui remplissent leur quadrilatère (un
   /// objet arrondi ramené de force à 4 points est rejeté), du plus sûr au moins sûr : toutes les
   /// formes à la tolérance stricte, puis tolérances assouplies (bords irréguliers, coins arrondis).
+  ///
+  /// Les contours intérieurs comptent aussi : quand le bord d'un ticket touche celui d'un autre
+  /// objet (clavier), le bord extérieur fusionne mais le bord intérieur reste un quadrilatère.
   List<Quad> _quads(cv.Mat edges, cv.Mat gray) {
     final (contours, hierarchy) = cv.findContours(
       edges,
-      cv.RETR_EXTERNAL,
+      cv.RETR_LIST,
       cv.CHAIN_APPROX_SIMPLE,
     );
     final found = <Quad>[];

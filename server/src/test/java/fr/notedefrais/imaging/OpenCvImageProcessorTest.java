@@ -68,6 +68,28 @@ class OpenCvImageProcessorTest {
     }
 
     @Test
+    void trouve_un_ticket_dont_un_coin_chevauche_un_objet_sombre() throws IOException {
+        BufferedImage img = filled(1000, 1400, new Color(120, 75, 40));
+        java.awt.Graphics2D g = img.createGraphics();
+        g.setColor(new Color(25, 25, 25));
+        g.fillRect(0, 30, 950, 300);
+        g.setColor(new Color(238, 236, 232));
+        g.fillPolygon(new int[] {290, 750, 740, 250}, new int[] {220, 250, 1250, 1230}, 4);
+        g.setColor(new Color(90, 90, 90));
+        for (int y = 420; y < 1100; y += 50) {
+            g.fillRect(330, y, 300, 12);
+        }
+        g.dispose();
+
+        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, null);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        assertThat(out.getWidth()).isBetween(440, 540);
+        assertThat(out.getHeight()).isBetween(950, 1060);
+    }
+
+    @Test
     void recadre_un_ticket_blanc_pose_sur_du_bois_clair() throws IOException {
         byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
                 new Color(215, 190, 150), new Color(245, 242, 238));
