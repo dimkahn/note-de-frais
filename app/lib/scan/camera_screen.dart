@@ -12,9 +12,12 @@ import 'corner_editor.dart';
 import 'document_scanner.dart';
 
 /// Caméra de scan : contour du document en direct, déclenchement automatique quand le cadrage
-/// est stable, puis écran d'ajustement. Renvoie un [ScanResult] (ou `null` si abandon).
+/// est stable, puis écran d'ajustement. Renvoie la liste des [ScanResult] validés (vide si abandon).
+/// En mode [multiPage], la caméra reste ouverte après chaque page jusqu'à « Terminer ».
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  const CameraScreen({super.key, this.multiPage = false});
+
+  final bool multiPage;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -26,6 +29,7 @@ class _CameraScreenState extends State<CameraScreen>
   String? _error;
   Quad? _liveQuad;
   bool _detectionFailed = false;
+  final _pages = <ScanResult>[];
   final _tracker = StabilityTracker();
   bool _autoCapture = true;
   bool _analyzing = false;
@@ -182,19 +186,46 @@ class _CameraScreenState extends State<CameraScreen>
             AdjustScreen(photoPath: photoPath, fallbackQuad: liveQuad),
       ),
     );
-    if (result != null && mounted) Navigator.pop(context, result);
+    if (result == null || !mounted) return;
+    if (!widget.multiPage) {
+      Navigator.pop(context, [result]);
+      return;
+    }
+    setState(() => _pages.add(result));
+    HapticFeedback.lightImpact();
   }
+
+  void _finish() => Navigator.pop(context, List.of(_pages));
 
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
     final color = Theme.of(context).colorScheme.primaryContainer;
+    // En multi-pages, revenir en arrière garde les pages déjà validées.
+    return PopScope(
+      canPop: _pages.isEmpty,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _finish();
+      },
+      child: _scaffold(context, controller, color),
+    );
+  }
+
+  Widget _scaffold(
+    BuildContext context,
+    CameraController? controller,
+    Color color,
+  ) {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: const Text('Scanner un justificatif'),
+        title: Text(
+          widget.multiPage
+              ? 'Page ${_pages.length + 1}'
+              : 'Scanner un justificatif',
+        ),
         actions: [
           IconButton(
             tooltip: _flash == FlashMode.torch
@@ -264,6 +295,8 @@ class _CameraScreenState extends State<CameraScreen>
                   busy: _capturing,
                   onShutter: _capture,
                   onGallery: _pickFromGallery,
+                  pages: _pages.length,
+                  onFinish: _finish,
                 ),
               ],
             ),
@@ -306,11 +339,17 @@ class _ShutterBar extends StatelessWidget {
     required this.busy,
     required this.onShutter,
     required this.onGallery,
+    required this.pages,
+    required this.onFinish,
   });
 
   final bool busy;
   final VoidCallback onShutter;
   final VoidCallback onGallery;
+
+  /// Pages déjà validées (mode multi-pages).
+  final int pages;
+  final VoidCallback onFinish;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -349,7 +388,14 @@ class _ShutterBar extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 48),
+          if (pages > 0)
+            FilledButton(
+              onPressed: busy ? null : onFinish,
+              style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+              child: Text('Terminer ($pages)'),
+            )
+          else
+            const SizedBox(width: 48),
         ],
       ),
     ),

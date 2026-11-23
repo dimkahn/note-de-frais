@@ -6,11 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:note_de_frais/data/expense_repository.dart';
+import 'package:note_de_frais/data/export_service.dart';
 import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/domain/expense.dart';
 import 'package:note_de_frais/domain/receipt_parser.dart';
 import 'package:note_de_frais/ui/home_screen.dart';
+import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -18,6 +20,9 @@ void main() {
   sqfliteFfiInit();
   late LocalStore store;
   late ExpenseRepository repo;
+  late _FakeSharer sharer;
+
+  setUp(() => sharer = _FakeSharer());
 
   Expense expense(
     String id,
@@ -55,8 +60,13 @@ void main() {
       await repo.load();
     });
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: repo,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider.value(value: repo),
+          Provider.value(
+            value: ExportService(sharer: sharer, tempDir: Directory.systemTemp),
+          ),
+        ],
         child: const MaterialApp(home: HomeScreen()),
       ),
     );
@@ -169,4 +179,52 @@ void main() {
       );
     });
   });
+
+  testWidgets('exporte le justificatif d\'une dépense en PDF', (tester) async {
+    late String processed;
+    await tester.runAsync(() async {
+      final img = cv.Mat.fromScalar(
+        80,
+        60,
+        cv.MatType.CV_8UC3,
+        cv.Scalar(230, 230, 230),
+      );
+      final (_, bytes) = cv.imencode('.jpg', img);
+      img.dispose();
+      processed = (File(
+        '${Directory.systemTemp.path}/ndf_export_test.jpg',
+      )..writeAsBytesSync(bytes)).path;
+    });
+    await pumpHome(tester, [
+      expense(
+        'a',
+        'Le Bistrot',
+        ExpenseCategory.restaurant,
+        'Paris',
+        '20.00',
+      ).copyWith(processedPath: processed),
+    ]);
+    await tester.tap(find.text('Le Bistrot'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Exporter'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('PDF'));
+    for (var i = 0; i < 40 && sharer.shared.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+
+    expect(sharer.shared.single.uri.pathSegments.last, 'Le Bistrot.pdf');
+  });
+}
+
+final class _FakeSharer implements FileSharer {
+  final shared = <File>[];
+
+  @override
+  Future<void> share(List<File> files, {required String subject}) async =>
+      shared.addAll(files);
 }

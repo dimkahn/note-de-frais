@@ -3,6 +3,7 @@ import 'package:note_de_frais/data/local_store.dart';
 
 import 'dart:io';
 
+import 'package:note_de_frais/domain/document.dart';
 import 'package:note_de_frais/domain/expense.dart';
 import 'package:note_de_frais/domain/quad.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -123,7 +124,66 @@ void main() {
     expect((await migrated.get('ancien'))!.merchant, 'Ibis');
     expect((await migrated.get('ancien'))!.corners, Quad.inset(0.1));
     expect((await migrated.get('ancien'))!.prefilled, isTrue);
+    await migrated.saveDocument(
+      ScannedDocument.create(id: 'doc', createdAt: DateTime.utc(2026)),
+    );
+    expect(await migrated.documents(), hasLength(1));
     await migrated.close();
     await dir.delete(recursive: true);
+  });
+
+  group('documents', () {
+    final at = DateTime.utc(2026, 11, 23, 9);
+    ScannedPage page(String id, ImageFilter filter) => ScannedPage(
+      id: id,
+      originalPath: '/docs/$id/original.jpg',
+      processedPath: '/docs/$id/processed.jpg',
+      corners: Quad.inset(0.1),
+      filter: filter,
+    );
+
+    test('enregistre un document et relit ses pages dans l\'ordre', () async {
+      final doc = ScannedDocument.create(id: 'd1', createdAt: at)
+          .withPage(page('p2', ImageFilter.scanBw), at: at)
+          .withPage(page('p1', ImageFilter.enhance), at: at);
+
+      await store.saveDocument(doc);
+
+      final read = (await store.documents()).single;
+      expect(read.title, doc.title);
+      expect(read.createdAt, at);
+      expect(read.pages.map((p) => p.id), ['p2', 'p1']);
+      expect(read.pages.first.filter, ImageFilter.scanBw);
+      expect(read.pages.first.corners, Quad.inset(0.1));
+    });
+
+    test('un nouvel enregistrement remplace les pages', () async {
+      final doc = ScannedDocument.create(id: 'd1', createdAt: at)
+          .withPage(page('p1', ImageFilter.none), at: at)
+          .withPage(page('p2', ImageFilter.none), at: at);
+      await store.saveDocument(doc);
+
+      await store.saveDocument(
+        doc.withoutPage('p1', at: at).renamed('Bail', at: at),
+      );
+
+      final read = (await store.documents()).single;
+      expect(read.title, 'Bail');
+      expect(read.pages.map((p) => p.id), ['p2']);
+    });
+
+    test('liste les documents du plus récent au plus ancien', () async {
+      await store.saveDocument(
+        ScannedDocument.create(id: 'vieux', createdAt: at),
+      );
+      await store.saveDocument(
+        ScannedDocument.create(
+          id: 'recent',
+          createdAt: at.add(const Duration(days: 1)),
+        ),
+      );
+
+      expect((await store.documents()).map((d) => d.id), ['recent', 'vieux']);
+    });
   });
 }

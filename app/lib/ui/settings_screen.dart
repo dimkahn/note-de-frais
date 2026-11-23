@@ -103,6 +103,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _repo.saveSettings(
       ServerSettings(baseUrl: _url.text, token: _token.text),
     );
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    // Onglet de la navigation principale : rien à fermer, on confirme sur place.
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Réglages enregistrés')));
   }
 }

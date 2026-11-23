@@ -10,11 +10,15 @@ import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'data/document_repository.dart';
 import 'data/expense_repository.dart';
+import 'data/export_service.dart';
+import 'data/system_file_sharer.dart';
 import 'data/file_store.dart';
 import 'data/local_store.dart';
 import 'scan/mlkit_receipt_text_reader.dart';
-import 'ui/home_screen.dart';
+import 'ui/main_shell.dart';
+import 'ui/theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -37,11 +41,27 @@ Future<void> main() async {
     // ML Kit n'existe que sur mobile ; sur desktop, la saisie reste manuelle.
     textReader: mobile ? const MlKitReceiptTextReader() : null,
   );
+  final documents = DocumentRepository(
+    store: store,
+    files: FileStore(Directory(p.join(dir.path, 'documents'))),
+  );
   await repo.load();
+  await documents.load();
+  final export = ExportService(
+    sharer: const SystemFileSharer(),
+    tempDir: await getTemporaryDirectory(),
+  );
   repo.sync(); // en arrière-plan : l'app est utilisable immédiatement, même hors-ligne
 
   runApp(
-    ChangeNotifierProvider.value(value: repo, child: const NoteDeFraisApp()),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: repo),
+        ChangeNotifierProvider.value(value: documents),
+        Provider.value(value: export),
+      ],
+      child: const NoteDeFraisApp(),
+    ),
   );
 }
 
@@ -50,20 +70,15 @@ class NoteDeFraisApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF1F6F5C);
     return MaterialApp(
       title: 'Notes de frais',
       debugShowCheckedModeBanner: false,
       locale: const Locale('fr', 'FR'),
       supportedLocales: const [Locale('fr', 'FR')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      theme: ThemeData(colorSchemeSeed: seed, useMaterial3: true),
-      darkTheme: ThemeData(
-        colorSchemeSeed: seed,
-        brightness: Brightness.dark,
-        useMaterial3: true,
-      ),
-      home: const HomeScreen(),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      home: const MainShell(),
     );
   }
 }

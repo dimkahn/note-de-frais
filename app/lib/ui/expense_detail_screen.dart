@@ -5,6 +5,7 @@ import '../data/expense_repository.dart';
 import '../domain/expense.dart';
 import '../domain/money.dart';
 import 'capture.dart';
+import 'export_button.dart';
 import 'format.dart';
 import 'receipt_image.dart';
 
@@ -27,6 +28,10 @@ class ExpenseDetailScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(expense.merchant ?? 'Justificatif'),
         actions: [
+          ExportButton(
+            title: expense.merchant ?? 'Justificatif',
+            imagePaths: [?(expense.processedPath ?? expense.originalPath)],
+          ),
           IconButton(
             tooltip: 'Ajuster le cadrage et le filtre',
             icon: const Icon(Icons.crop_rotate),
@@ -144,13 +149,22 @@ class _ReceiptViewerState extends State<_ReceiptViewer> {
         if (widget.withServer && e.status == ProcessingStatus.pending)
           const LinearProgressIndicator(),
         Expanded(
-          child: InteractiveViewer(
-            maxScale: 6,
-            child: Center(
-              child: ReceiptImage(
-                expense: e,
-                showOriginal: _original,
-                fit: BoxFit.contain,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: ColoredBox(
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                child: InteractiveViewer(
+                  maxScale: 6,
+                  child: Center(
+                    child: ReceiptImage(
+                      expense: e,
+                      showOriginal: _original,
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

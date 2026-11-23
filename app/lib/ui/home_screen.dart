@@ -8,7 +8,8 @@ import 'capture.dart';
 import 'expense_detail_screen.dart';
 import 'expense_tile.dart';
 import 'format.dart';
-import 'settings_screen.dart';
+import 'theme.dart';
+import 'ticket.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,20 +29,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final groups = groupExpenses(filtered, _groupBy);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notes de frais'),
-        actions: [
-          if (repo.settings.isConfigured) _SyncButton(repo: repo),
-          IconButton(
-            tooltip: 'Réglages',
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
-          ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => scanReceipt(context, repo),
         icon: const Icon(Icons.document_scanner_outlined),
@@ -51,6 +38,13 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: repo.sync,
         child: CustomScrollView(
           slivers: [
+            SliverAppBar.large(
+              title: const Text('Dépenses'),
+              actions: [
+                if (repo.settings.isConfigured) _SyncButton(repo: repo),
+              ],
+            ),
+            SliverToBoxAdapter(child: _TotalBanner(expenses: filtered)),
             SliverToBoxAdapter(
               child: _FilterBar(
                 query: _query,
@@ -60,7 +54,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 onGroupBy: (g) => setState(() => _groupBy = g),
               ),
             ),
-            SliverToBoxAdapter(child: _TotalBanner(expenses: filtered)),
             if (filtered.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
@@ -275,6 +268,7 @@ class _MenuChip<T> extends StatelessWidget {
   );
 }
 
+/// Le total, présenté comme un ticket de caisse : l'élément signature de l'application.
 class _TotalBanner extends StatelessWidget {
   const _TotalBanner({required this.expenses});
 
@@ -284,23 +278,32 @@ class _TotalBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     if (expenses.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
-    return Card.filled(
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+    final on = theme.colorScheme.onPrimary;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: TicketCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                '${expenses.length} dépense${expenses.length > 1 ? 's' : ''}',
-                style: theme.textTheme.titleMedium,
+            Text(
+              'TOTAL',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: on.withValues(alpha: 0.8),
+                letterSpacing: 2,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            Flexible(
-              child: Text(
-                formatTotals(totalsByCurrency(expenses)),
-                textAlign: TextAlign.end,
-                style: theme.textTheme.titleLarge,
+            const SizedBox(height: 4),
+            Text(
+              formatTotals(totalsByCurrency(expenses)),
+              style: amountStyle(theme.textTheme.headlineMedium)
+                  ?.copyWith(color: on, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${expenses.length} dépense${expenses.length > 1 ? 's' : ''}',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: on.withValues(alpha: 0.85),
               ),
             ),
           ],
@@ -318,19 +321,26 @@ class _GroupHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       child: Row(
         children: [
           Expanded(
             child: Text(
-              '${group.label} (${group.count})',
-              style: theme.textTheme.titleSmall?.copyWith(
-                color: theme.colorScheme.primary,
+              '${group.label.toUpperCase()} · ${group.count}',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: muted,
+                letterSpacing: 1.2,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
-          Text(formatTotals(group.totals), style: theme.textTheme.titleSmall),
+          Text(
+            formatTotals(group.totals),
+            style: amountStyle(theme.textTheme.labelLarge)
+                ?.copyWith(color: muted),
+          ),
         ],
       ),
     );
@@ -349,11 +359,17 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            filtered
-                ? Icons.filter_alt_off_outlined
-                : Icons.receipt_long_outlined,
-            size: 56,
+          CircleAvatar(
+            radius: 40,
+            backgroundColor: Theme.of(context).colorScheme.primary
+                .withValues(alpha: 0.10),
+            child: Icon(
+              filtered
+                  ? Icons.filter_alt_off_outlined
+                  : Icons.receipt_long_outlined,
+              size: 40,
+              color: Theme.of(context).colorScheme.primary,
+            ),
           ),
           const SizedBox(height: 16),
           Text(
@@ -361,12 +377,12 @@ class _EmptyState extends StatelessWidget {
                 ? 'Aucune dépense ne correspond aux filtres'
                 : 'Photographiez votre premier justificatif',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
+            style: Theme.of(context).textTheme.titleLarge,
           ),
           if (!filtered) ...[
             const SizedBox(height: 8),
             const Text(
-              'Il sera recadré, amélioré et ses informations seront extraites automatiquement.',
+              'Il est recadré et lu automatiquement : vous n\'avez plus qu\'à vérifier.',
               textAlign: TextAlign.center,
             ),
           ],

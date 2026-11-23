@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../domain/expense.dart';
 import 'format.dart';
 import 'receipt_image.dart';
+import 'theme.dart';
 
 class ExpenseTile extends StatelessWidget {
   const ExpenseTile({
@@ -22,6 +23,13 @@ class ExpenseTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final badge = statusBadge(expense, withServer: withServer);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Card(clipBehavior: Clip.antiAlias, child: _tile(theme, badge)),
+    );
+  }
+
+  Widget _tile(ThemeData theme, StatusBadge? badge) {
     final subtitle = [
       formatDate(expense.effectiveDate),
       if (expense.category != null) expense.category!.label,
@@ -31,9 +39,9 @@ class ExpenseTile extends StatelessWidget {
       onTap: onTap,
       minVerticalPadding: 12,
       leading: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         child: SizedBox.square(
-          dimension: 56,
+          dimension: 52,
           child: ReceiptImage(expense: expense),
         ),
       ),
@@ -41,6 +49,7 @@ class ExpenseTile extends StatelessWidget {
         expense.merchant ?? 'Justificatif sans nom',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.titleMedium,
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -55,9 +64,7 @@ class ExpenseTile extends StatelessWidget {
       ),
       trailing: Text(
         formatAmount(expense.amountTotal, expense.currency),
-        style: theme.textTheme.titleMedium?.copyWith(
-          fontFeatures: const [FontFeature.tabularFigures()],
-        ),
+        style: amountStyle(theme.textTheme.titleMedium),
       ),
     );
   }

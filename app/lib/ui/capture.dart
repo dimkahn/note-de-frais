@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../data/document_repository.dart';
 import '../data/expense_repository.dart';
 import '../domain/expense.dart';
 import '../scan/adjust_screen.dart';
@@ -16,10 +17,11 @@ Future<Expense?> scanReceipt(
   final mobile = Platform.isAndroid || Platform.isIOS;
   final ScanResult? scan;
   if (mobile) {
-    scan = await Navigator.push<ScanResult>(
+    final scans = await Navigator.push<List<ScanResult>>(
       context,
       MaterialPageRoute(builder: (_) => const CameraScreen()),
     );
+    scan = (scans == null || scans.isEmpty) ? null : scans.first;
   } else {
     final photo = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -83,4 +85,43 @@ Future<void> readjustReceipt(
     corners: scan.quad,
     processedJpeg: scan.processedJpeg,
   );
+}
+
+/// Scan de plusieurs pages pour un document : caméra en mode multi-pages (mobile), ou plusieurs
+/// images ajustées une à une (desktop). Liste vide si l'utilisateur abandonne.
+Future<List<PageCapture>> scanPages(BuildContext context) async {
+  final mobile = Platform.isAndroid || Platform.isIOS;
+  final scans = <ScanResult>[];
+  if (mobile) {
+    scans.addAll(
+      await Navigator.push<List<ScanResult>>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const CameraScreen(multiPage: true),
+            ),
+          ) ??
+          const [],
+    );
+  } else {
+    final photos = await ImagePicker().pickMultiImage(
+      requestFullMetadata: false,
+    );
+    for (final photo in photos) {
+      if (!context.mounted) break;
+      final scan = await Navigator.push<ScanResult>(
+        context,
+        MaterialPageRoute(builder: (_) => AdjustScreen(photoPath: photo.path)),
+      );
+      if (scan != null) scans.add(scan);
+    }
+  }
+  return [
+    for (final s in scans)
+      PageCapture(
+        photoPath: s.photoPath,
+        corners: s.quad,
+        filter: s.filter,
+        processedJpeg: s.processedJpeg,
+      ),
+  ];
 }
