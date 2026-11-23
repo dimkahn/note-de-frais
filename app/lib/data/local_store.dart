@@ -8,7 +8,7 @@ final class LocalStore {
 
   final Database _db;
 
-  static const _schemaVersion = 1;
+  static const _schemaVersion = 3;
 
   static Future<LocalStore> open(
     String path, {
@@ -16,7 +16,11 @@ final class LocalStore {
   }) async {
     final db = await factory.openDatabase(
       path,
-      options: OpenDatabaseOptions(version: _schemaVersion, onCreate: _create),
+      options: OpenDatabaseOptions(
+        version: _schemaVersion,
+        onCreate: _create,
+        onUpgrade: _upgrade,
+      ),
     );
     return LocalStore._(db);
   }
@@ -29,8 +33,10 @@ final class LocalStore {
         amount_total TEXT, amount_vat TEXT, currency TEXT,
         city TEXT, country TEXT, address TEXT, payment_method TEXT, description TEXT,
         user_edited INTEGER NOT NULL DEFAULT 0,
+        prefilled INTEGER NOT NULL DEFAULT 0,
         filter TEXT NOT NULL,
         cropped INTEGER NOT NULL DEFAULT 0,
+        corners TEXT,
         has_processed_image INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL,
         processing_error TEXT,
@@ -40,6 +46,18 @@ final class LocalStore {
         original_path TEXT, processed_path TEXT
       )''');
     await db.execute('CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)');
+  }
+
+  /// Migrations successives : chaque version ajoute ce qui lui manque, sans perte de données.
+  static Future<void> _upgrade(Database db, int from, int to) async {
+    if (from < 2) {
+      await db.execute('ALTER TABLE expense ADD COLUMN corners TEXT');
+    }
+    if (from < 3) {
+      await db.execute(
+        'ALTER TABLE expense ADD COLUMN prefilled INTEGER NOT NULL DEFAULT 0',
+      );
+    }
   }
 
   Future<void> save(Expense e) => _db.insert(

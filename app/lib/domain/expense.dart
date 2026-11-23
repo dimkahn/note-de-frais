@@ -1,4 +1,6 @@
 import 'money.dart';
+import 'quad.dart';
+import 'receipt_parser.dart';
 
 /// Type de dépense (aligné sur l'énumération `Category` du serveur).
 enum ExpenseCategory {
@@ -82,8 +84,10 @@ final class Expense {
     this.paymentMethod,
     this.description,
     this.userEdited = false,
+    this.prefilled = false,
     this.filter = ImageFilter.enhance,
     this.cropped = false,
+    this.corners,
     this.hasProcessedImage = false,
     this.status = ProcessingStatus.pending,
     this.processingError,
@@ -124,6 +128,7 @@ final class Expense {
     userEdited: json['userEdited'] as bool? ?? false,
     filter: ImageFilter.fromCode(json['filter'] as String?),
     cropped: json['cropped'] as bool? ?? false,
+    corners: _quad(json['corners']),
     hasProcessedImage: json['hasProcessedImage'] as bool? ?? false,
     status: ProcessingStatus.fromCode(json['status'] as String?),
     processingError: json['processingError'] as String?,
@@ -146,8 +151,10 @@ final class Expense {
     paymentMethod: row['payment_method'] as String?,
     description: row['description'] as String?,
     userEdited: row['user_edited'] == 1,
+    prefilled: row['prefilled'] == 1,
     filter: ImageFilter.fromCode(row['filter'] as String?),
     cropped: row['cropped'] == 1,
+    corners: _quad(row['corners']),
     hasProcessedImage: row['has_processed_image'] == 1,
     status: ProcessingStatus.fromCode(row['status'] as String?),
     processingError: row['processing_error'] as String?,
@@ -172,8 +179,15 @@ final class Expense {
   final String? paymentMethod;
   final String? description;
   final bool userEdited;
+
+  /// Champs devinés par la lecture sur l'appareil, pas encore confirmés (ni par l'utilisateur,
+  /// ni par l'analyse du serveur). Propre à l'appareil : jamais envoyé au serveur.
+  final bool prefilled;
   final ImageFilter filter;
   final bool cropped;
+
+  /// Contour choisi sur l'appareil ; `null` = détection automatique par le serveur.
+  final Quad? corners;
   final bool hasProcessedImage;
   final ProcessingStatus status;
   final String? processingError;
@@ -205,8 +219,10 @@ final class Expense {
     'payment_method': paymentMethod,
     'description': description,
     'user_edited': userEdited ? 1 : 0,
+    'prefilled': prefilled ? 1 : 0,
     'filter': filter.code,
     'cropped': cropped ? 1 : 0,
+    'corners': corners?.format(),
     'has_processed_image': hasProcessedImage ? 1 : 0,
     'status': status.code,
     'processing_error': processingError,
@@ -246,8 +262,10 @@ final class Expense {
     String? paymentMethod,
     String? description,
     bool? userEdited,
+    bool? prefilled,
     ImageFilter? filter,
     bool? cropped,
+    Quad? corners,
     bool? hasProcessedImage,
     ProcessingStatus? status,
     String? processingError,
@@ -270,8 +288,10 @@ final class Expense {
     paymentMethod: paymentMethod ?? this.paymentMethod,
     description: description ?? this.description,
     userEdited: userEdited ?? this.userEdited,
+    prefilled: prefilled ?? this.prefilled,
     filter: filter ?? this.filter,
     cropped: cropped ?? this.cropped,
+    corners: corners ?? this.corners,
     hasProcessedImage: hasProcessedImage ?? this.hasProcessedImage,
     status: status ?? this.status,
     processingError: processingError ?? this.processingError,
@@ -282,6 +302,32 @@ final class Expense {
     originalPath: originalPath ?? this.originalPath,
     processedPath: processedPath ?? this.processedPath,
   );
+
+  /// Champs que la lecture sur l'appareil a pu remplir.
+  ReceiptGuess get guess => ReceiptGuess(
+    merchant: merchant,
+    expenseDate: expenseDate,
+    amountTotal: amountTotal,
+    amountVat: amountVat,
+    currency: currency,
+  );
+
+  /// Pré-remplit les champs vides avec ce que la lecture sur l'appareil a deviné. Sans effet sur une
+  /// dépense corrigée à la main ou déjà analysée par le serveur. Ne change pas l'état de synchronisation :
+  /// un pré-remplissage ne doit jamais partir au serveur comme une correction manuelle.
+  Expense withDeviceGuess(ReceiptGuess guess) {
+    if (userEdited || status == ProcessingStatus.done || guess.isEmpty) {
+      return this;
+    }
+    return copyWith(
+      merchant: merchant ?? guess.merchant,
+      expenseDate: expenseDate ?? guess.expenseDate,
+      amountTotal: amountTotal ?? guess.amountTotal,
+      amountVat: amountVat ?? guess.amountVat,
+      currency: currency ?? guess.currency,
+      prefilled: true,
+    );
+  }
 
   /// Remplace l'ensemble des champs éditables (les valeurs `null` effacent le champ).
   Expense withEditedFields(Expense edited) => Expense(
@@ -300,6 +346,7 @@ final class Expense {
     userEdited: true,
     filter: filter,
     cropped: cropped,
+    corners: corners,
     hasProcessedImage: hasProcessedImage,
     status: status,
     processingError: processingError,
@@ -340,3 +387,6 @@ DateTime? _instant(Object? value) => value is String && value.isNotEmpty
 String? _formatDate(DateTime? d) => d == null
     ? null
     : '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+Quad? _quad(Object? value) =>
+    value is String && value.isNotEmpty ? Quad.parse(value) : null;

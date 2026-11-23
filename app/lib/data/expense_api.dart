@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../domain/expense.dart';
+import '../domain/quad.dart';
 
 final class ServerSettings {
   const ServerSettings({required this.baseUrl, this.token = ''});
@@ -50,6 +51,7 @@ final class ExpenseApi {
       ..headers.addAll(_headers())
       ..fields['id'] = e.id
       ..fields['filter'] = e.filter.code
+      ..fields.addAll({if (e.corners != null) 'corners': e.corners!.format()})
       ..files.add(
         http.MultipartFile.fromBytes(
           'file',
@@ -75,10 +77,17 @@ final class ExpenseApi {
     return Expense.fromServerJson(_json(response) as Map<String, Object?>);
   }
 
-  Future<Expense> reprocess(String id, ImageFilter filter) async {
+  Future<Expense> reprocess(
+    String id,
+    ImageFilter filter,
+    Quad? corners,
+  ) async {
     final response = await _send(
       () => _client.post(
-        _uri('/api/expenses/$id/reprocess', {'filter': filter.code}),
+        _uri('/api/expenses/$id/reprocess', {
+          'filter': filter.code,
+          if (corners != null) 'corners': corners.format(),
+        }),
         headers: _headers(),
       ),
     );

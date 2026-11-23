@@ -7,6 +7,8 @@ import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/data/sync_service.dart';
 import 'package:note_de_frais/domain/expense.dart';
+import 'package:note_de_frais/domain/quad.dart';
+import 'package:note_de_frais/domain/receipt_parser.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
@@ -155,5 +157,85 @@ void main() {
 
     expect(server.requests.any((r) => r.method == 'DELETE'), isTrue);
     expect((await store.get('a'))!.syncState, SyncState.synced);
+  });
+
+  test('envoie le contour choisi sur l\'appareil', () async {
+    final e = await captured('a');
+    await store.save(e.copyWith(corners: Quad.inset(0.1)));
+
+    await sync.sync();
+
+    expect(server.uploadedField('corners'), '0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9');
+  });
+
+  test('un retraitement envoie le filtre et le contour', () async {
+    await captured('a');
+    await sync.sync();
+    final e = (await store.get('a'))!;
+    await store.save(
+      e.copyWith(
+        filter: ImageFilter.sharpen,
+        corners: Quad.inset(0.2),
+        syncState: SyncState.pendingReprocess,
+      ),
+    );
+
+    await sync.sync();
+
+    final reprocess = server.requests.lastWhere(
+      (r) => r.url.path.endsWith('/reprocess'),
+    );
+    expect(reprocess.url.queryParameters['filter'], 'SHARPEN');
+    expect(reprocess.url.queryParameters['corners'], Quad.inset(0.2).format());
+  });
+
+  group('pré-remplissage sur l\'appareil', () {
+    Future<void> prefill(String id) async {
+      final e = (await store.get(id))!;
+      await store.save(
+        e.withDeviceGuess(
+          const ReceiptGuess(merchant: 'Carrefour', amountTotal: '5.70'),
+        ),
+      );
+    }
+
+    test(
+      'est conservé tant que le serveur n\'a pas fini son analyse',
+      () async {
+        await captured('a');
+        await prefill('a');
+
+        await sync.sync();
+
+        final e = (await store.get('a'))!;
+        expect(e.merchant, 'Carrefour');
+        expect(e.amountTotal, '5.70');
+        expect(e.prefilled, isTrue);
+        expect(e.syncState, SyncState.synced);
+      },
+    );
+
+    test('n\'est jamais envoyé comme une correction manuelle', () async {
+      await captured('a');
+      await prefill('a');
+
+      await sync.sync();
+
+      expect(server.requests.where((r) => r.method == 'PUT'), isEmpty);
+    });
+
+    test('est remplacé par l\'analyse du serveur une fois terminée', () async {
+      await captured('a');
+      await prefill('a');
+      await sync.sync();
+      server.processed('a');
+
+      await sync.sync();
+
+      final e = (await store.get('a'))!;
+      expect(e.merchant, 'Le Bistrot');
+      expect(e.amountTotal, '42.50');
+      expect(e.prefilled, isFalse);
+    });
   });
 }

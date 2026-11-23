@@ -9,6 +9,7 @@ import 'package:note_de_frais/data/expense_repository.dart';
 import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/domain/expense.dart';
+import 'package:note_de_frais/domain/receipt_parser.dart';
 import 'package:note_de_frais/ui/home_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -74,7 +75,7 @@ void main() {
       find.text('Photographiez votre premier justificatif'),
       findsOneWidget,
     );
-    expect(find.text('Ajouter'), findsOneWidget);
+    expect(find.text('Scanner'), findsOneWidget);
   });
 
   testWidgets('liste les dépenses avec le total', (tester) async {
@@ -115,5 +116,57 @@ void main() {
 
     expect(find.text('Ibis'), findsOneWidget);
     expect(find.text('Le Bistrot'), findsNothing);
+  });
+
+  group('sans serveur configuré', () {
+    final scanned = Expense.draft(
+      id: 's',
+      originalPath: '/inexistant/s.jpg',
+      filter: ImageFilter.enhance,
+    );
+
+    testWidgets('une dépense scannée est à compléter, sans synchro proposée', (
+      tester,
+    ) async {
+      await pumpHome(tester, [scanned]);
+
+      expect(find.text('À compléter'), findsOneWidget);
+      expect(find.text('En attente d\'envoi'), findsNothing);
+      expect(find.byTooltip('Synchroniser'), findsNothing);
+    });
+
+    testWidgets('la fiche invite à la saisie manuelle au lieu d\'attendre', (
+      tester,
+    ) async {
+      await pumpHome(tester, [scanned]);
+
+      await tester.tap(find.text('Justificatif sans nom'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(
+        find.textContaining('Analyse automatique indisponible'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('la fiche signale un pré-remplissage à vérifier', (
+      tester,
+    ) async {
+      await pumpHome(tester, [
+        scanned.withDeviceGuess(
+          const ReceiptGuess(merchant: 'Carrefour', amountTotal: '5.70'),
+        ),
+      ]);
+
+      await tester.tap(find.text('Carrefour'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Lu automatiquement'), findsOneWidget);
+      expect(
+        find.textContaining('Analyse automatique indisponible'),
+        findsNothing,
+      );
+    });
   });
 }

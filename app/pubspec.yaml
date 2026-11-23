@@ -45,6 +45,9 @@ dependencies:
   provider: ^6.1.5+1
   flutter_localizations:
     sdk: flutter
+  opencv_dart: ^2.3.2
+  camera: ^0.12.2
+  google_mlkit_text_recognition: ^1.0.3
 
 dev_dependencies:
   flutter_test:
@@ -56,6 +59,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 flutter:
 
   # The following line ensures that the Material Icons font is

@@ -5,14 +5,23 @@ import 'format.dart';
 import 'receipt_image.dart';
 
 class ExpenseTile extends StatelessWidget {
-  const ExpenseTile({super.key, required this.expense, required this.onTap});
+  const ExpenseTile({
+    super.key,
+    required this.expense,
+    required this.onTap,
+    required this.withServer,
+  });
 
   final Expense expense;
   final VoidCallback onTap;
 
+  /// Un serveur est configuré : envoi et analyse automatique sont attendus.
+  final bool withServer;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final badge = statusBadge(expense, withServer: withServer);
     final subtitle = [
       formatDate(expense.effectiveDate),
       if (expense.category != null) expense.category!.label,
@@ -37,11 +46,10 @@ class ExpenseTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis),
-          if (expense.status != ProcessingStatus.done ||
-              expense.syncState != SyncState.synced)
+          if (badge != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: _StatusBadge(expense: expense),
+              child: _StatusBadge(badge: badge),
             ),
         ],
       ),
@@ -56,30 +64,23 @@ class ExpenseTile extends StatelessWidget {
 }
 
 class _StatusBadge extends StatelessWidget {
-  const _StatusBadge({required this.expense});
+  const _StatusBadge({required this.badge});
 
-  final Expense expense;
+  final StatusBadge badge;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final failed =
-        expense.status == ProcessingStatus.failed ||
-        expense.status == ProcessingStatus.extractionFailed;
-    final pending =
-        expense.status == ProcessingStatus.pending ||
-        expense.syncState != SyncState.synced;
-    final (icon, color) = failed
-        ? (Icons.error_outline, scheme.error)
-        : pending
-        ? (Icons.schedule, scheme.tertiary)
-        : (Icons.check_circle_outline, scheme.primary);
+    final (icon, color) = switch (badge.tone) {
+      BadgeTone.attention => (Icons.error_outline, scheme.error),
+      BadgeTone.waiting => (Icons.schedule, scheme.tertiary),
+    };
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon, size: 16, color: color),
         const SizedBox(width: 4),
-        Text(statusLabel(expense), style: TextStyle(color: color)),
+        Text(badge.label, style: TextStyle(color: color)),
       ],
     );
   }

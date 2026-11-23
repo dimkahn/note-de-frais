@@ -28,9 +28,9 @@ class ExpenseDetailScreen extends StatelessWidget {
         title: Text(expense.merchant ?? 'Justificatif'),
         actions: [
           IconButton(
-            tooltip: 'Changer le filtre',
-            icon: const Icon(Icons.auto_fix_high_outlined),
-            onPressed: () => _changeFilter(context, repo, expense),
+            tooltip: 'Ajuster le cadrage et le filtre',
+            icon: const Icon(Icons.crop_rotate),
+            onPressed: () => readjustReceipt(context, repo, expense),
           ),
           IconButton(
             tooltip: 'Supprimer',
@@ -42,10 +42,15 @@ class ExpenseDetailScreen extends StatelessWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth > 840;
-          final viewer = _ReceiptViewer(expense: expense);
+          final withServer = repo.settings.isConfigured;
+          final viewer = _ReceiptViewer(
+            expense: expense,
+            withServer: withServer,
+          );
           final form = _ExpenseForm(
             key: ValueKey('${expense.id}-${expense.serverUpdatedAt}'),
             expense: expense,
+            withServer: withServer,
           );
           return wide
               ? Row(
@@ -67,20 +72,6 @@ class ExpenseDetailScreen extends StatelessWidget {
         },
       ),
     );
-  }
-
-  Future<void> _changeFilter(
-    BuildContext context,
-    ExpenseRepository repo,
-    Expense e,
-  ) async {
-    final filter = await showDialog<ImageFilter>(
-      context: context,
-      builder: (_) => FilterDialog(initial: e.filter),
-    );
-    if (filter != null && filter != e.filter) {
-      await repo.reprocess(e.id, filter);
-    }
   }
 
   Future<void> _confirmDelete(
@@ -114,9 +105,10 @@ class ExpenseDetailScreen extends StatelessWidget {
 
 /// Affiche la version traitée ou l'original, avec zoom.
 class _ReceiptViewer extends StatefulWidget {
-  const _ReceiptViewer({required this.expense});
+  const _ReceiptViewer({required this.expense, required this.withServer});
 
   final Expense expense;
+  final bool withServer;
 
   @override
   State<_ReceiptViewer> createState() => _ReceiptViewerState();
@@ -149,7 +141,7 @@ class _ReceiptViewerState extends State<_ReceiptViewer> {
             onSelectionChanged: (s) => setState(() => _original = s.first),
           ),
         ),
-        if (e.status == ProcessingStatus.pending)
+        if (widget.withServer && e.status == ProcessingStatus.pending)
           const LinearProgressIndicator(),
         Expanded(
           child: InteractiveViewer(
@@ -169,9 +161,14 @@ class _ReceiptViewerState extends State<_ReceiptViewer> {
 }
 
 class _ExpenseForm extends StatefulWidget {
-  const _ExpenseForm({super.key, required this.expense});
+  const _ExpenseForm({
+    super.key,
+    required this.expense,
+    required this.withServer,
+  });
 
   final Expense expense;
+  final bool withServer;
 
   @override
   State<_ExpenseForm> createState() => _ExpenseFormState();
@@ -236,8 +233,31 @@ class _ExpenseFormState extends State<_ExpenseForm> {
                     Icons.info_outline,
                     color: Theme.of(context).colorScheme.error,
                   ),
-                  title: Text(statusLabel(e)),
+                  title: Text(e.status.label),
                   subtitle: Text(e.processingError!),
+                ),
+              ),
+            if (e.prefilled && !e.userEdited)
+              const Card.outlined(
+                child: ListTile(
+                  leading: Icon(Icons.document_scanner_outlined),
+                  title: Text('Lu automatiquement sur l\'appareil'),
+                  subtitle: Text(
+                    'Vérifiez le montant, la TVA, la date et le commerçant, '
+                    'puis enregistrez.',
+                  ),
+                ),
+              )
+            else if (!widget.withServer && needsManualEntry(e))
+              const Card.outlined(
+                child: ListTile(
+                  leading: Icon(Icons.edit_note),
+                  title: Text('Analyse automatique indisponible'),
+                  subtitle: Text(
+                    'Aucun serveur configuré : saisissez les informations '
+                    'ci-dessous. Le justificatif sera analysé si vous '
+                    'configurez un serveur plus tard.',
+                  ),
                 ),
               ),
             if (e.userEdited)

@@ -7,6 +7,16 @@ import 'package:http/testing.dart';
 /// Faux serveur : mémorise les requêtes et répond selon les routes de l'API.
 class FakeServer {
   final requests = <http.Request>[];
+
+  /// Valeur d'un champ multipart du dernier envoi.
+  String? uploadedField(String name) {
+    final upload = requests.lastWhere(
+      (r) => r.method == 'POST' && r.url.path == '/api/expenses',
+    );
+    final body = utf8.decode(upload.bodyBytes, allowMalformed: true);
+    return RegExp('name="$name"\r\n\r\n([^\r]+)').firstMatch(body)?.group(1);
+  }
+
   final expenses = <String, Map<String, Object?>>{};
   bool offline = false;
 

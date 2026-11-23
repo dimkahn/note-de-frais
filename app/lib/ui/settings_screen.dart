@@ -38,6 +38,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             decoration: const InputDecoration(
               labelText: 'Adresse du serveur',
               hintText: 'http://192.168.1.10:8080',
+              helperText:
+                  'Optionnel : sans serveur, tout fonctionne sur l\'appareil, '
+                  'sauf l\'analyse automatique des justificatifs.',
+              helperMaxLines: 2,
             ),
           ),
           const SizedBox(height: 12),
@@ -86,7 +90,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: Icon(Icons.info_outline),
             title: Text('Vos justificatifs restent sur l\'appareil'),
             subtitle: Text(
-              'Les originaux sont conservés localement et sur le serveur ; '
+              'Les originaux sont conservés localement (et sur le serveur s\'il est configuré) ; '
               'le recadrage et l\'extraction ne les modifient jamais.',
             ),
           ),

@@ -76,7 +76,10 @@ final class SyncService {
         await _store.save(_merge(await _api.update(local), local));
       case SyncState.pendingReprocess:
         await _store.save(
-          _merge(await _api.reprocess(local.id, local.filter), local),
+          _merge(
+            await _api.reprocess(local.id, local.filter, local.corners),
+            local,
+          ),
         );
       case SyncState.pendingDelete:
         await _api.delete(local.id);
@@ -135,12 +138,18 @@ final class SyncService {
     return merged;
   }
 
-  /// État du serveur + chemins des fichiers locaux.
-  static Expense _merge(Expense remote, Expense? local) => remote.copyWith(
-    syncState: SyncState.synced,
-    originalPath: local?.originalPath,
-    processedPath: local?.processedPath,
-  );
+  /// État du serveur + chemins des fichiers locaux. Le pré-remplissage de l'appareil reste affiché
+  /// tant que le serveur n'a pas terminé son analyse ; ensuite, le serveur fait foi.
+  static Expense _merge(Expense remote, Expense? local) {
+    final merged = remote.copyWith(
+      syncState: SyncState.synced,
+      originalPath: local?.originalPath,
+      processedPath: local?.processedPath,
+    );
+    return local != null && local.prefilled
+        ? merged.withDeviceGuess(local.guess)
+        : merged;
+  }
 
   static String _contentType(String path) =>
       switch (p.extension(path).toLowerCase()) {

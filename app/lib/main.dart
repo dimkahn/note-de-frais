@@ -13,6 +13,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'data/expense_repository.dart';
 import 'data/file_store.dart';
 import 'data/local_store.dart';
+import 'scan/mlkit_receipt_text_reader.dart';
 import 'ui/home_screen.dart';
 
 Future<void> main() async {
@@ -33,6 +34,8 @@ Future<void> main() async {
     store: store,
     files: files,
     httpClient: http.Client(),
+    // ML Kit n'existe que sur mobile ; sur desktop, la saisie reste manuelle.
+    textReader: mobile ? const MlKitReceiptTextReader() : null,
   );
   await repo.load();
   repo.sync(); // en arrière-plan : l'app est utilisable immédiatement, même hors-ligne

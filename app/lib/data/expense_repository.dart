@@ -5,6 +5,9 @@ import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../domain/expense.dart';
+import '../domain/quad.dart';
+import '../domain/receipt_parser.dart';
+import '../domain/receipt_text_reader.dart';
 import 'expense_api.dart';
 import 'file_store.dart';
 import 'local_store.dart';
@@ -18,6 +21,7 @@ class ExpenseRepository extends ChangeNotifier {
     required FileStore files,
     required http.Client httpClient,
     this.pollInterval = const Duration(seconds: 4),
+    this._textReader,
   }) : _store = store,
        _files = files {
     _sync = SyncService(
@@ -29,6 +33,9 @@ class ExpenseRepository extends ChangeNotifier {
 
   final LocalStore _store;
   final FileStore _files;
+
+  /// Lecture du justificatif sur l'appareil (`null` : indisponible, ex. desktop).
+  final ReceiptTextReader? _textReader;
   late final SyncService _sync;
 
   /// Intervalle de rafraîchissement tant qu'un traitement serveur est en cours (`null` = désactivé).
@@ -75,17 +82,51 @@ class ExpenseRepository extends ChangeNotifier {
     await sync();
   }
 
-  /// Copie la photo dans le stockage de l'app (original conservé tel quel) et crée la dépense.
-  Future<Expense> capture(String photoPath, ImageFilter filter) async {
+  /// Scan sur l'appareil : la photo brute est conservée telle quelle (original), l'image
+  /// recadrée et filtrée localement est visible immédiatement, même hors-ligne.
+  Future<Expense> captureScan(
+    String photoPath,
+    Quad corners,
+    ImageFilter filter, {
+    required List<int> processedJpeg,
+  }) async {
     final id = const Uuid().v4();
     final original = await _files.saveOriginal(id, photoPath);
+    final processed = await _files.saveProcessed(id, processedJpeg);
     final expense = Expense.draft(
       id: id,
       originalPath: original.path,
       filter: filter,
-    );
-    await _saveAndSync(expense);
-    return expense;
+    ).copyWith(corners: corners, cropped: true, processedPath: processed.path);
+    await _store.save(expense);
+    await _reload();
+    await _readReceipt(id, processed.path);
+    await sync();
+    return byId(id) ?? expense;
+  }
+
+  /// Pré-remplit la dépense avec ce que l'OCR de l'appareil lit sur l'image recadrée. Un échec
+  /// est journalisé sans bloquer : la dépense reste enregistrée et se complète à la main.
+  Future<void> _readReceipt(String id, String imagePath) async {
+    final reader = _textReader;
+    if (reader == null) return;
+    try {
+      final text = await reader.read(imagePath);
+      if (text == null) return;
+      final guess = const ReceiptParser().parse(text);
+      // Une synchro en cours réenregistrerait sa copie antérieure par-dessus le pré-remplissage.
+      while (_running != null) {
+        await _running;
+      }
+      final current = await _store.get(id);
+      if (current == null || current.deleted) return;
+      final prefilled = current.withDeviceGuess(guess);
+      if (prefilled == current) return;
+      await _store.save(prefilled);
+      await _reload();
+    } on Object catch (e, st) {
+      debugPrint('Lecture du justificatif impossible : $e\n$st');
+    }
   }
 
   Future<void> edit(Expense edited) async {
@@ -94,13 +135,26 @@ class ExpenseRepository extends ChangeNotifier {
     await _saveAndSync(current.withEditedFields(edited));
   }
 
-  Future<void> reprocess(String id, ImageFilter filter) async {
+  /// Nouveau traitement depuis l'original : autre filtre et/ou contour réajusté.
+  /// [processedJpeg] : aperçu calculé sur l'appareil, affiché sans attendre le serveur.
+  Future<void> reprocess(
+    String id,
+    ImageFilter filter, {
+    Quad? corners,
+    List<int>? processedJpeg,
+  }) async {
     final current = byId(id);
     if (current == null) return;
     final pendingUpload = current.syncState == SyncState.pendingUpload;
+    final processed = processedJpeg == null
+        ? null
+        : await _files.saveProcessed(id, processedJpeg);
     await _saveAndSync(
       current.copyWith(
         filter: filter,
+        corners: corners,
+        processedPath: processed?.path,
+        cropped: corners != null ? true : null,
         status: ProcessingStatus.pending,
         syncState: pendingUpload
             ? SyncState.pendingUpload

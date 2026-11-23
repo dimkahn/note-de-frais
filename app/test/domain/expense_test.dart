@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:note_de_frais/domain/expense.dart';
+import 'package:note_de_frais/domain/quad.dart';
+import 'package:note_de_frais/domain/receipt_parser.dart';
 
 void main() {
   const serverJson = {
@@ -18,6 +20,7 @@ void main() {
     'userEdited': false,
     'filter': 'ENHANCE',
     'cropped': true,
+    'corners': '0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9',
     'hasProcessedImage': true,
     'status': 'DONE',
     'processingError': null,
@@ -37,6 +40,7 @@ void main() {
       expect(e.status, ProcessingStatus.done);
       expect(e.serverUpdatedAt, DateTime.utc(2026, 3, 10, 12, 1));
       expect(e.syncState, SyncState.synced);
+      expect(e.corners, Quad.inset(0.1));
     });
 
     test('les montants restent exacts en texte décimal', () {
@@ -85,6 +89,76 @@ void main() {
       expect(e.syncState, SyncState.pendingUpload);
       expect(e.status, ProcessingStatus.pending);
       expect(e.filter, ImageFilter.scanBw);
+    });
+  });
+
+  group('lecture sur l\'appareil', () {
+    final draft = Expense.draft(
+      id: 'd',
+      originalPath: '/tmp/d.jpg',
+      filter: ImageFilter.enhance,
+    );
+    final guess = ReceiptGuess(
+      merchant: 'Carrefour',
+      expenseDate: DateTime(2026, 3, 14),
+      amountTotal: '5.70',
+      amountVat: '0.30',
+      currency: 'EUR',
+    );
+
+    test('complète les champs vides et marque la dépense pré-remplie', () {
+      final e = draft.withDeviceGuess(guess);
+
+      expect(e.merchant, 'Carrefour');
+      expect(e.expenseDate, DateTime(2026, 3, 14));
+      expect(e.amountTotal, '5.70');
+      expect(e.amountVat, '0.30');
+      expect(e.currency, 'EUR');
+      expect(e.prefilled, isTrue);
+      expect(e.userEdited, isFalse);
+    });
+
+    test(
+      'ne change pas l\'état de synchronisation (aucun envoi de correction)',
+      () {
+        final synced = draft.copyWith(syncState: SyncState.synced);
+
+        expect(synced.withDeviceGuess(guess).syncState, SyncState.synced);
+      },
+    );
+
+    test('ne remplace jamais un champ déjà rempli', () {
+      final e = draft.copyWith(amountTotal: '9.99').withDeviceGuess(guess);
+
+      expect(e.amountTotal, '9.99');
+      expect(e.merchant, 'Carrefour');
+    });
+
+    test('sans effet sur une dépense corrigée à la main', () {
+      final edited = draft.withEditedFields(draft);
+
+      expect(edited.withDeviceGuess(guess), edited);
+    });
+
+    test('sans effet quand l\'analyse serveur est terminée', () {
+      final done = draft.copyWith(status: ProcessingStatus.done);
+
+      expect(done.withDeviceGuess(guess), done);
+    });
+
+    test('une correction manuelle valide le pré-remplissage', () {
+      final prefilled = draft.withDeviceGuess(guess);
+
+      final edited = prefilled.withEditedFields(prefilled);
+
+      expect(edited.prefilled, isFalse);
+      expect(edited.userEdited, isTrue);
+    });
+
+    test('le pré-remplissage survit à la base locale', () {
+      final prefilled = draft.withDeviceGuess(guess);
+
+      expect(Expense.fromDb(prefilled.toDb()).prefilled, isTrue);
     });
   });
 }

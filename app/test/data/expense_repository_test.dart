@@ -6,6 +6,8 @@ import 'package:note_de_frais/data/expense_repository.dart';
 import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/domain/expense.dart';
+import 'package:note_de_frais/domain/quad.dart';
+import 'package:note_de_frais/domain/receipt_text_reader.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
@@ -43,10 +45,13 @@ void main() {
   String photo() =>
       (File('${dir.path}/photo.jpg')..writeAsBytesSync([1, 2, 3])).path;
 
+  Future<Expense> scan(ImageFilter filter) =>
+      repo.captureScan(photo(), Quad.inset(0.1), filter, processedJpeg: [5]);
+
   test('une capture est visible immédiatement, même hors-ligne', () async {
     server.offline = true;
 
-    final e = await repo.capture(photo(), ImageFilter.sharpen);
+    final e = await scan(ImageFilter.sharpen);
 
     expect(repo.expenses.map((x) => x.id), [e.id]);
     expect(await File(e.originalPath!).readAsBytes(), [1, 2, 3]);
@@ -54,14 +59,14 @@ void main() {
   });
 
   test('une capture est envoyée au serveur', () async {
-    final e = await repo.capture(photo(), ImageFilter.enhance);
+    final e = await scan(ImageFilter.enhance);
 
     expect(server.expenses.keys, contains(e.id));
     expect(repo.byId(e.id)!.syncState, SyncState.synced);
   });
 
   test('modifier une dépense marque la correction et la synchronise', () async {
-    final e = await repo.capture(photo(), ImageFilter.enhance);
+    final e = await scan(ImageFilter.enhance);
 
     await repo.edit(
       e.copyWith(merchant: 'Ibis', category: ExpenseCategory.hotel),
@@ -74,7 +79,7 @@ void main() {
   });
 
   test('changer de filtre relance le traitement côté serveur', () async {
-    final e = await repo.capture(photo(), ImageFilter.enhance);
+    final e = await scan(ImageFilter.enhance);
 
     await repo.reprocess(e.id, ImageFilter.scanBw);
 
@@ -89,7 +94,7 @@ void main() {
   });
 
   test('une dépense supprimée disparaît de la liste', () async {
-    final e = await repo.capture(photo(), ImageFilter.enhance);
+    final e = await scan(ImageFilter.enhance);
 
     await repo.delete(e.id);
 
@@ -110,4 +115,137 @@ void main() {
     expect(reopened.settings.baseUrl, 'http://serveur');
     reopened.dispose();
   });
+
+  test('un scan conserve la photo brute, affiche tout de suite l\'image recadrée et envoie le contour', () async {
+    server.offline = true;
+    final quad = Quad.inset(0.15);
+
+    final e = await repo.captureScan(
+      photo(),
+      quad,
+      ImageFilter.scanBw,
+      processedJpeg: [9, 9],
+    );
+
+    final saved = repo.byId(e.id)!;
+    expect(await File(saved.originalPath!).readAsBytes(), [1, 2, 3]);
+    expect(await File(saved.processedPath!).readAsBytes(), [9, 9]);
+    expect(saved.cropped, isTrue);
+    expect(saved.corners, quad);
+
+    server.offline = false;
+    await repo.sync();
+    expect(server.uploadedField('corners'), quad.format());
+  });
+
+  test(
+    'réajuster le contour relance le traitement avec les nouveaux coins',
+    () async {
+      final e = await repo.captureScan(
+        photo(),
+        Quad.inset(0.1),
+        ImageFilter.enhance,
+        processedJpeg: [1],
+      );
+
+      await repo.reprocess(
+        e.id,
+        ImageFilter.enhance,
+        corners: Quad.inset(0.2),
+        processedJpeg: [2],
+      );
+
+      expect(await File(repo.byId(e.id)!.processedPath!).readAsBytes(), [2]);
+      final reprocess = server.requests.lastWhere(
+        (r) => r.url.path.endsWith('/reprocess'),
+      );
+      expect(
+        reprocess.url.queryParameters['corners'],
+        Quad.inset(0.2).format(),
+      );
+    },
+  );
+
+  group('lecture du justificatif sur l\'appareil', () {
+    const ticket = 'CARREFOUR MARKET\n14/03/2026\nTOTAL TTC 5,70 €';
+
+    ExpenseRepository withReader(ReceiptTextReader reader) => ExpenseRepository(
+      store: store,
+      files: FileStore(dir),
+      httpClient: server.client,
+      pollInterval: null,
+      textReader: reader,
+    );
+
+    test('pré-remplit une capture à partir de l\'image recadrée', () async {
+      final reader = _FakeTextReader(ticket);
+      final local = withReader(reader);
+      await local.load();
+
+      final e = await local.captureScan(
+        photo(),
+        Quad.inset(0.1),
+        ImageFilter.enhance,
+        processedJpeg: [5],
+      );
+
+      final saved = local.byId(e.id)!;
+      expect(reader.paths, [saved.processedPath]);
+      expect(saved.merchant, 'CARREFOUR MARKET');
+      expect(saved.amountTotal, '5.70');
+      expect(saved.expenseDate, DateTime(2026, 3, 14));
+      expect(saved.prefilled, isTrue);
+      local.dispose();
+    });
+
+    test('une lecture en échec n\'empêche pas l\'enregistrement', () async {
+      final local = withReader(
+        _FakeTextReader(null, error: StateError('ML Kit')),
+      );
+      await local.load();
+
+      final e = await local.captureScan(
+        photo(),
+        Quad.inset(0.1),
+        ImageFilter.enhance,
+        processedJpeg: [5],
+      );
+
+      expect(local.byId(e.id), isNotNull);
+      expect(local.byId(e.id)!.amountTotal, isNull);
+      local.dispose();
+    });
+
+    test('avec serveur, le pré-remplissage reste affiché sans être envoyé comme correction', () async {
+      final local = withReader(_FakeTextReader(ticket));
+      await local.load();
+
+      final e = await local.captureScan(
+        photo(),
+        Quad.inset(0.1),
+        ImageFilter.enhance,
+        processedJpeg: [5],
+      );
+
+      expect(server.expenses.keys, contains(e.id));
+      expect(server.requests.where((r) => r.method == 'PUT'), isEmpty);
+      expect(local.byId(e.id)!.amountTotal, '5.70');
+      local.dispose();
+    });
+  });
+}
+
+final class _FakeTextReader implements ReceiptTextReader {
+  _FakeTextReader(this.text, {this.error});
+
+  final String? text;
+  final Object? error;
+  final paths = <String>[];
+
+  @override
+  Future<String?> read(String imagePath) async {
+    paths.add(imagePath);
+    if (error != null) throw error!;
+    return text;
+  }
 }

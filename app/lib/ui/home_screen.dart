@@ -31,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Notes de frais'),
         actions: [
-          _SyncButton(repo: repo),
+          if (repo.settings.isConfigured) _SyncButton(repo: repo),
           IconButton(
             tooltip: 'Réglages',
             icon: const Icon(Icons.settings_outlined),
@@ -43,9 +43,9 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => captureReceipt(context, repo),
-        icon: const Icon(Icons.add_a_photo_outlined),
-        label: const Text('Ajouter'),
+        onPressed: () => scanReceipt(context, repo),
+        icon: const Icon(Icons.document_scanner_outlined),
+        label: const Text('Scanner'),
       ),
       body: RefreshIndicator(
         onRefresh: repo.sync,
@@ -77,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     return ExpenseTile(
                       key: ValueKey(e.id),
                       expense: e,
+                      withServer: repo.settings.isConfigured,
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -124,12 +125,7 @@ class _SyncButton extends StatelessWidget {
     return IconButton(
       tooltip: offline ? 'Hors-ligne — réessayer' : 'Synchroniser',
       icon: Icon(offline ? Icons.cloud_off_outlined : Icons.sync),
-      onPressed: repo.settings.isConfigured
-          ? repo.sync
-          : () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+      onPressed: repo.sync,
     );
   }
 }
