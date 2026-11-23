@@ -183,6 +183,50 @@ l'app garde les valeurs lues sur l'appareil.
   deux premières connexions Google simultanées pour le même compte peuvent se heurter à l'unicité
   (500, la suivante réussit) ; pas de « délier Google » ni de « définir un mot de passe ».
 
+## Décisions prises en phase 4 (documents synchronisés)
+
+- **Ordre et retrait par l'état complet** : l'appareil envoie titre + liste ordonnée de toutes ses
+  pages (`PUT`) ; une page reçue absente de la liste est retirée (logiquement, fichiers conservés,
+  ne compte plus dans le quota) ; un identifiant cité avant l'envoi de sa page lui garde sa place ;
+  un identifiant répété ne garde que sa première place. Réintégrer une page retirée est soumis au
+  quota (403), sinon le retrait permettrait de contourner l'offre.
+- **Quota commun** : `Quota` (paquet `account`) additionne les `StorageUsage` (dépenses non
+  supprimées, pages non retirées de documents non supprimés). Envoi d'une page : refus si
+  `usage + original + rendu > quota` (égalité acceptée) ; renvoi d'une page déjà reçue jamais refusé ;
+  nouveau rendu jamais refusé (comme le re-traitement d'une dépense, la taille est remplacée).
+- Pas d'analyse IA ni de traitement d'image côté serveur pour les documents : le rendu est celui de
+  l'appareil (JPEG obligatoire, filtre obligatoire, contour facultatif). `createdAt` d'un document
+  reçu d'un autre appareil = date du serveur (celle de l'appareil d'origine n'est pas transmise).
+- Fichiers des pages sous `<storage-dir>/documents/<pageId>/` : racine distincte de celle des
+  dépenses, un identifiant de page ne peut viser le dossier d'une dépense.
+- App : **fichiers téléchargés à la synchro** (original et rendu d'une page nouvelle, rendu seul quand
+  `renderVersion` change), comme pour les dépenses : un document reçu est consultable et exportable
+  hors-ligne. Le rendu remplacé est effacé après l'enregistrement ; un original déjà présent
+  (téléchargement interrompu) est conservé tel quel.
+- App : un document n'est marqué envoyé que si son `updated_at` n'a pas changé pendant l'envoi, une
+  page que si son rendu est toujours le même ; sinon il repart à la synchro suivante (renvois
+  idempotents). Un fichier de page illisible pendant l'envoi (rendu remplacé entre-temps) laisse le
+  document en attente, sans bloquer les autres. À la réception, l'écriture est conditionnelle : si
+  l'appareil a changé le document pendant les téléchargements, rien n'est écrasé (il repart, puis sera
+  reçu). Un document dont la réception échoue (téléchargement refusé) fait reculer la date de
+  dernière synchro juste avant lui : il revient à la synchro suivante. Le retour d'un document que
+  l'appareil vient d'envoyer n'est pas réécrit. Une réponse inattendue du serveur est journalisée et
+  rapportée, sans faire échouer l'action locale.
+- L'appareil fait foi pour l'ordre : un `PUT` envoie les pages **qu'il connaît** ; une page ajoutée
+  sur un autre appareil et pas encore reçue ici est retirée par ce `PUT` (le dernier qui écrit
+  l'emporte, comme pour le titre). Accepté : l'usage multi-appareils simultané est rare ; à revoir
+  avec une fusion si besoin.
+- App : chaque dépôt (dépenses, documents) a sa propre date de dernière synchro, remise à zéro à la
+  connexion ; quota dépassé → le document reste en attente et est retenté à la synchro suivante ; la
+  page Compte affiche « Espace en ligne plein : 1 dépense et 2 documents restent sur cet appareil ».
+  Sans compte, rien ne part ; les documents créés hors compte partent à la connexion (les documents
+  d'avant la phase 4 sont migrés « à envoyer »).
+- Restent ouverts : pas d'indicateur d'état de synchro par document dans la liste (l'état est
+  stocké) ; `changes` sans pagination (une requête de pages par document) ; si l'écriture en base
+  échoue après celle de l'original, l'original orphelin fait répondre 409 à tout renvoi de cette page
+  (deux envois simultanés : 409 passager) — même limite que pour les dépenses, à traiter ensemble ; un nouveau rendu fait sur deux
+  appareils à la fois : le dernier envoyé l'emporte.
+
 ## Mise en place Google (pas à pas)
 
 Rien n'est à inventer : chaque identifiant vient de la console Google Cloud.
