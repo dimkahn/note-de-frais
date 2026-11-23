@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../data/account_repository.dart';
 import '../data/auth_api.dart';
+import '../data/document_repository.dart';
 import '../data/expense_api.dart';
 import '../data/expense_repository.dart';
 import '../data/sync_service.dart';
@@ -438,36 +439,42 @@ class _SyncStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final report = context.watch<ExpenseRepository>().lastReport;
-    if (report == null) return const SizedBox.shrink();
+    final documents = context.watch<DocumentRepository>().lastReport;
+    final refusedExpenses = report?.refusedForQuota ?? 0;
+    final refusedDocuments = documents?.refusedForQuota ?? 0;
     return Column(
       children: [
-        if (report.refusedForQuota > 0)
-          _QuotaRefusal(count: report.refusedForQuota),
-        _SyncSummary(report: report),
+        if (refusedExpenses + refusedDocuments > 0)
+          _QuotaRefusal(expenses: refusedExpenses, documents: refusedDocuments),
+        if (report != null) _SyncSummary(report: report),
       ],
     );
   }
 }
 
-/// Envois refusés faute d'espace : les dépenses restent sur l'appareil et repartiront.
+/// Envois refusés faute d'espace : dépenses et documents restent sur l'appareil et repartiront.
 class _QuotaRefusal extends StatelessWidget {
-  const _QuotaRefusal({required this.count});
+  const _QuotaRefusal({required this.expenses, required this.documents});
 
-  final int count;
+  final int expenses;
+  final int documents;
 
   @override
   Widget build(BuildContext context) {
     final error = Theme.of(context).colorScheme.error;
-    final remaining = count == 1
-        ? '1 dépense reste sur cet appareil'
-        : '$count dépenses restent sur cet appareil';
+    String count(int n, String word) => n == 1 ? '1 $word' : '$n ${word}s';
+    final items = [
+      if (expenses > 0) count(expenses, 'dépense'),
+      if (documents > 0) count(documents, 'document'),
+    ].join(' et ');
+    final single = expenses + documents == 1;
     return ListTile(
       leading: Icon(Icons.cloud_off_outlined, color: error),
       title: Text('Espace en ligne plein', style: TextStyle(color: error)),
       subtitle: Text(
-        '$remaining. ${count == 1 ? 'Elle sera envoyée' : 'Elles seront envoyées'} '
-        'à une prochaine synchronisation, une fois de la place libérée en ligne '
-        '(en supprimant des dépenses).',
+        '$items ${single ? 'reste' : 'restent'} sur cet appareil. '
+        'L\'envoi reprendra à une prochaine synchronisation, une fois de la place '
+        'libérée en ligne (en supprimant des dépenses ou des documents).',
       ),
     );
   }

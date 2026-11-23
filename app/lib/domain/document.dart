@@ -9,6 +9,8 @@ final class ScannedPage {
     required this.processedPath,
     required this.corners,
     required this.filter,
+    this.syncState = SyncState.pendingUpload,
+    this.renderVersion,
   });
 
   final String id;
@@ -16,6 +18,12 @@ final class ScannedPage {
   final String processedPath;
   final Quad corners;
   final ImageFilter filter;
+
+  /// `pendingUpload` (jamais envoyée), `pendingReprocess` (rendu à renvoyer) ou `synced`.
+  final SyncState syncState;
+
+  /// Version du rendu connue du serveur (`null` : jamais envoyée).
+  final int? renderVersion;
 }
 
 /// Document de plusieurs pages (contrat, attestation…), distinct d'une dépense. Immuable.
@@ -27,6 +35,7 @@ final class ScannedDocument {
     required this.updatedAt,
     List<ScannedPage> pages = const [],
     this.deleted = false,
+    this.syncState = SyncState.pendingUpload,
   }) : pages = List.unmodifiable(pages);
 
   factory ScannedDocument.create({
@@ -49,6 +58,9 @@ final class ScannedDocument {
   final DateTime updatedAt;
   final List<ScannedPage> pages;
   final bool deleted;
+
+  /// État d'envoi au serveur du document (titre, ordre des pages, suppression).
+  final SyncState syncState;
 
   /// Première page, utilisée comme vignette.
   ScannedPage? get cover => pages.isEmpty ? null : pages.first;
@@ -82,6 +94,11 @@ final class ScannedDocument {
                 processedPath: processedPath,
                 corners: corners,
                 filter: filter,
+                // Jamais envoyée : partira avec son rendu courant.
+                syncState: p.syncState == SyncState.pendingUpload
+                    ? SyncState.pendingUpload
+                    : SyncState.pendingReprocess,
+                renderVersion: p.renderVersion,
               )
             : p,
     ],
@@ -94,13 +111,14 @@ final class ScannedDocument {
   }
 
   ScannedDocument markDeleted({required DateTime at}) =>
-      _copy(deleted: true, updatedAt: at);
+      _copy(deleted: true, updatedAt: at, syncState: SyncState.pendingDelete);
 
   ScannedDocument _copy({
     String? title,
     List<ScannedPage>? pages,
     bool? deleted,
     required DateTime updatedAt,
+    SyncState? syncState,
   }) => ScannedDocument(
     id: id,
     title: title ?? this.title,
@@ -108,5 +126,11 @@ final class ScannedDocument {
     updatedAt: updatedAt,
     pages: pages ?? this.pages,
     deleted: deleted ?? this.deleted,
+    // Un document jamais envoyé le sera avec son état courant.
+    syncState:
+        syncState ??
+        (this.syncState == SyncState.pendingUpload
+            ? SyncState.pendingUpload
+            : SyncState.pendingUpdate),
   );
 }

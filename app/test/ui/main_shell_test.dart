@@ -59,7 +59,12 @@ void main() {
         account: account,
         pollInterval: null,
       );
-      documents = DocumentRepository(store: store, files: files);
+      documents = DocumentRepository(
+        store: store,
+        files: files,
+        httpClient: client,
+        account: account,
+      );
       await expenses.load();
       await documents.load();
     });

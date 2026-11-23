@@ -12,6 +12,8 @@ import 'package:note_de_frais/scan/adjust_screen.dart';
 import 'package:note_de_frais/ui/capture.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import '../support/signed_out_account.dart';
+
 void main() {
   sqfliteFfiInit();
   late Directory dir;
@@ -25,7 +27,12 @@ void main() {
       inMemoryDatabasePath,
       factory: databaseFactoryFfi,
     );
-    repo = DocumentRepository(store: store, files: FileStore(dir));
+    repo = DocumentRepository(
+      store: store,
+      files: FileStore(dir),
+      httpClient: noServer,
+      account: await signedOutAccount(store),
+    );
     await repo.load();
     doc = await repo.create([
       for (final b in [1, 2, 3])

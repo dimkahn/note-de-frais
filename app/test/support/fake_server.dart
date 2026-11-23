@@ -78,17 +78,12 @@ class FakeServer {
       return http.Response('', 204);
     }
 
+    if (path.startsWith('/api/documents')) return _documentRoute(request);
+
     final id = path.split('/').length > 3 ? path.split('/')[3] : null;
 
     if (request.method == 'POST' && path == '/api/expenses') {
-      if (quotaFull) {
-        return _ok({
-          'status': 403,
-          'code': 'QUOTA_EXCEEDED',
-          'usedBytes': quotaBytes,
-          'quotaBytes': quotaBytes,
-        }, 403);
-      }
+      if (quotaFull) return _quotaExceeded();
       final body = utf8.decode(request.bodyBytes, allowMalformed: true);
       final uploadedId = RegExp(r'name="id"\r\n\r\n([^\r]+)')
           .firstMatch(body)!
@@ -117,6 +112,141 @@ class FakeServer {
   });
 
   final _owners = <String, String>{};
+
+  /// Documents du compte : titre, ordre voulu, pages reçues (id → {filter, corners, renderVersion}).
+  final documents = <String, ServerDocument>{};
+
+  /// Téléchargements d'originaux de pages en erreur 500.
+  var pageOriginalsFail = false;
+
+  /// Appelé avant de répondre au téléchargement d'un original de page (pour simuler une
+  /// action de l'utilisateur pendant la synchro).
+  Future<void> Function()? beforePageOriginal;
+
+  /// Appelé avant de répondre au téléchargement d'un rendu de page.
+  Future<void> Function()? beforeProcessedDownload;
+
+  /// Corps imposé pour `GET /api/documents/changes` (réponse illisible ou inattendue).
+  String? documentChangesBody;
+
+  /// Pages refusées faute d'espace quand [quotaFull].
+  var refusedPages = 0;
+
+  /// Horloge des changements : chaque écriture de document avance d'une seconde.
+  var _clock = DateTime.utc(2026, 11, 23, 10);
+
+  Future<http.Response> _documentRoute(http.Request request) async {
+    final segments =
+        request.url.pathSegments; // api, documents, id, pages, pageId, …
+    if (segments.length == 3 && segments[2] == 'changes') {
+      if (documentChangesBody case final body?) {
+        return http.Response(body, 200);
+      }
+      final since = DateTime.parse(request.url.queryParameters['since']!);
+      return _ok([
+        for (final d in documents.values)
+          if (d.updatedAt.isAfter(since)) d.toJson(),
+      ]);
+    }
+    final id = segments[2];
+    final doc = documents[id];
+    if (request.method == 'PUT' && segments.length == 3) {
+      final body = _body(request);
+      final updated = (doc ?? ServerDocument(id))
+        ..title = body['title']! as String
+        ..pageOrder = (body['pageIds']! as List).cast<String>()
+        ..updatedAt = _tick();
+      documents[id] = updated;
+      return _ok(updated.toJson());
+    }
+    if (doc == null || doc.deleted) return http.Response('introuvable', 404);
+    if (request.method == 'DELETE') {
+      doc
+        ..deleted = true
+        ..updatedAt = _tick();
+      return http.Response('', 204);
+    }
+    if (request.method == 'POST' && segments.length == 4) {
+      final pageId = _multipartField(request, 'pageId')!;
+      final existing = doc.pages[pageId];
+      if (existing != null) return _ok(existing);
+      if (quotaFull) {
+        refusedPages++;
+        return _quotaExceeded();
+      }
+      doc.pages[pageId] = {
+        'id': pageId,
+        'filter': _multipartField(request, 'filter'),
+        'corners': _multipartField(request, 'corners'),
+        'renderVersion': 1,
+      };
+      doc.updatedAt = _tick();
+      return _ok(doc.pages[pageId]);
+    }
+    final page = segments.length > 4 ? doc.pages[segments[4]] : null;
+    if (page == null) return http.Response('introuvable', 404);
+    if (request.method == 'POST' && segments.last == 'processed') {
+      page
+        ..['renderVersion'] = (page['renderVersion']! as int) + 1
+        ..['filter'] = _multipartField(request, 'filter')
+        ..['corners'] = _multipartField(request, 'corners');
+      doc.updatedAt = _tick();
+      return _ok(page);
+    }
+    if (segments.last == 'original') {
+      await beforePageOriginal?.call();
+      if (pageOriginalsFail) return http.Response('boom', 500);
+      return http.Response.bytes(
+        [1, 1],
+        200,
+        headers: {'content-type': 'image/png'},
+      );
+    }
+    if (segments.last == 'processed') {
+      await beforeProcessedDownload?.call();
+      return http.Response.bytes([7, page['renderVersion']! as int], 200);
+    }
+    return http.Response('introuvable', 404);
+  }
+
+  DateTime _tick() => _clock = _clock.add(const Duration(seconds: 1));
+
+  /// Ajoute un document « créé sur un autre appareil ».
+  ServerDocument documentFromAnotherDevice(String id, List<String> pageIds) {
+    final doc = ServerDocument(id)
+      ..title = 'Venu d\'ailleurs'
+      ..pageOrder = pageIds
+      ..updatedAt = _tick();
+    for (final pageId in pageIds) {
+      doc.pages[pageId] = {
+        'id': pageId,
+        'filter': 'SCAN_BW',
+        'corners': '0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9',
+        'renderVersion': 1,
+      };
+    }
+    return documents[id] = doc;
+  }
+
+  /// Nouveau rendu d'une page fait sur un autre appareil.
+  void rerenderedElsewhere(String id, String pageId) {
+    final doc = documents[id]!;
+    final page = doc.pages[pageId]!;
+    page['renderVersion'] = (page['renderVersion']! as int) + 1;
+    doc.updatedAt = _tick();
+  }
+
+  static String? _multipartField(http.Request request, String name) {
+    final body = utf8.decode(request.bodyBytes, allowMalformed: true);
+    return RegExp('name="$name"\r\n\r\n([^\r]+)').firstMatch(body)?.group(1);
+  }
+
+  http.Response _quotaExceeded() => _ok({
+    'status': 403,
+    'code': 'QUOTA_EXCEEDED',
+    'usedBytes': quotaBytes,
+    'quotaBytes': quotaBytes,
+  }, 403);
 
   http.Response _authenticate(http.Request request) {
     final body = _body(request);
@@ -199,4 +329,28 @@ class FakeServer {
     status,
     headers: {'content-type': 'application/json; charset=utf-8'},
   );
+}
+
+/// Document tel que le serveur le connaît.
+class ServerDocument {
+  ServerDocument(this.id);
+
+  final String id;
+  var title = '';
+  var pageOrder = <String>[];
+  final pages = <String, Map<String, Object?>>{};
+  var deleted = false;
+  var updatedAt = DateTime.utc(2026);
+
+  Map<String, Object?> toJson() => {
+    'id': id,
+    'title': title,
+    'pages': [
+      for (final pageId in pageOrder)
+        if (pages[pageId] != null) pages[pageId],
+    ],
+    'deleted': deleted,
+    'createdAt': '2026-11-23T09:00:00Z',
+    'updatedAt': updatedAt.toIso8601String(),
+  };
 }

@@ -1,11 +1,16 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../domain/document.dart';
 import '../domain/expense.dart';
 import '../domain/quad.dart';
+import 'account_repository.dart';
+import 'document_api.dart';
+import 'document_sync_service.dart';
 import 'file_store.dart';
 import 'local_store.dart';
+import 'sync_service.dart';
 
 /// Page tout juste scannée : photo brute, contour choisi, filtre et rendu calculé sur l'appareil.
 final class PageCapture {
@@ -22,12 +27,98 @@ final class PageCapture {
   final List<int> processedJpeg;
 }
 
-/// Point d'entrée de l'UI pour les documents multi-pages, stockés sur l'appareil uniquement.
+/// Point d'entrée de l'UI pour les documents multi-pages : tout s'écrit d'abord sur l'appareil,
+/// puis part vers le compte connecté (synchro rejouable, comme les dépenses).
 class DocumentRepository extends ChangeNotifier {
-  DocumentRepository({required this._store, required this._files});
+  DocumentRepository({
+    required this._store,
+    required this._files,
+    required http.Client httpClient,
+    required this._account,
+  }) : _wasConnected = _account.connected {
+    _account.addListener(_onAccountChanged);
+    _sync = DocumentSyncService(
+      store: _store,
+      api: DocumentApi(
+        client: httpClient,
+        settings: () => _account.settings,
+        token: () => _account.session?.token,
+      ),
+      files: _files,
+    );
+  }
 
   final LocalStore _store;
   final FileStore _files;
+  final AccountRepository _account;
+  late final DocumentSyncService _sync;
+  bool _wasConnected;
+  Future<SyncReport?>? _running;
+  bool _syncAgain = false;
+  SyncReport? _lastReport;
+
+  /// Synchronisation avec le serveur possible (adresse renseignée et compte connecté).
+  bool get withServer => _account.connected;
+
+  SyncReport? get lastReport => _lastReport;
+
+  bool get isSyncing => _running != null;
+
+  /// Lance une synchronisation ; un appel pendant une synchro en cours la fait rejouer à la fin.
+  Future<SyncReport?> sync() {
+    if (_running != null) {
+      _syncAgain = true;
+      return _running!;
+    }
+    if (!_account.connected) return Future.value(null);
+    _running = _runSync();
+    return _running!;
+  }
+
+  Future<SyncReport?> _runSync() async {
+    try {
+      do {
+        _syncAgain = false;
+        _lastReport = await _syncReportingFailures();
+        await load();
+      } while (_syncAgain && !_lastReport!.unauthorized);
+    } finally {
+      _running = null;
+    }
+    final report = _lastReport!;
+    // Documents locaux conservés : ils repartiront à la prochaine connexion.
+    if (report.unauthorized) await _account.expire();
+    if (!report.offline &&
+        !report.unauthorized &&
+        (report.pushed > 0 || report.refusedForQuota > 0)) {
+      await _account.refresh();
+    }
+    return report;
+  }
+
+  /// Une réponse inattendue du serveur ne fait jamais échouer l'action locale qui a lancé la
+  /// synchro : elle est journalisée et rapportée ; tout sera rejoué à la synchro suivante.
+  Future<SyncReport> _syncReportingFailures() async {
+    try {
+      return await _sync.sync();
+    } on Object catch (e, st) {
+      debugPrint('Synchronisation des documents impossible : $e\n$st');
+      return SyncReport(errors: ['Synchronisation impossible : $e']);
+    }
+  }
+
+  /// À la connexion (éventuellement à un autre compte), tout est récupéré et les documents locaux
+  /// en attente partent vers le compte : l'envoi est idempotent (UUID du client). On ne se connecte
+  /// qu'une fois déconnecté (la page Compte ne propose la connexion qu'alors) : tout changement de
+  /// compte passe donc par ce front montant.
+  Future<void> _onAccountChanged() async {
+    final connected = _account.connected;
+    final justConnected = connected && !_wasConnected;
+    _wasConnected = connected;
+    if (!justConnected) return;
+    await _store.clearLastDocumentSync();
+    await sync();
+  }
 
   List<ScannedDocument> _all = const [];
   bool _disposed = false;
@@ -131,6 +222,7 @@ class DocumentRepository extends ChangeNotifier {
   Future<void> _save(ScannedDocument doc) async {
     await _store.saveDocument(doc);
     await load();
+    await sync();
   }
 
   void _notify() {
@@ -139,6 +231,7 @@ class DocumentRepository extends ChangeNotifier {
 
   @override
   void dispose() {
+    _account.removeListener(_onAccountChanged);
     _disposed = true;
     super.dispose();
   }

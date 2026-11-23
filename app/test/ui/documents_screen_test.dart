@@ -15,6 +15,7 @@ import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
 
 import '../support/temp_downloads.dart';
+import '../support/signed_out_account.dart';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -60,7 +61,12 @@ void main() {
         inMemoryDatabasePath,
         factory: databaseFactoryFfi,
       );
-      repo = DocumentRepository(store: store, files: FileStore(dir));
+      repo = DocumentRepository(
+        store: store,
+        files: FileStore(dir),
+        httpClient: noServer,
+        account: await signedOutAccount(store),
+      );
       await repo.load();
       for (var d = 0; d < documents; d++) {
         final doc = await repo.create([

@@ -10,7 +10,7 @@ final class LocalStore {
 
   final Database _db;
 
-  static const _schemaVersion = 4;
+  static const _schemaVersion = 5;
 
   static Future<LocalStore> open(
     String path, {
@@ -58,7 +58,8 @@ final class LocalStore {
         title TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        deleted INTEGER NOT NULL DEFAULT 0
+        deleted INTEGER NOT NULL DEFAULT 0,
+        sync_state TEXT NOT NULL DEFAULT 'pendingUpload'
       )''');
     await db.execute('''
       CREATE TABLE document_page (
@@ -68,7 +69,9 @@ final class LocalStore {
         original_path TEXT NOT NULL,
         processed_path TEXT NOT NULL,
         corners TEXT NOT NULL,
-        filter TEXT NOT NULL
+        filter TEXT NOT NULL,
+        sync_state TEXT NOT NULL DEFAULT 'pendingUpload',
+        render_version INTEGER
       )''');
   }
 
@@ -82,7 +85,20 @@ final class LocalStore {
         'ALTER TABLE expense ADD COLUMN prefilled INTEGER NOT NULL DEFAULT 0',
       );
     }
-    if (from < 4) await _createDocumentTables(db);
+    if (from < 4) {
+      await _createDocumentTables(db);
+    } else if (from < 5) {
+      // Documents d'avant la synchro : ils partiront vers le compte à la prochaine connexion.
+      await db.execute(
+        "ALTER TABLE document ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'pendingUpload'",
+      );
+      await db.execute(
+        "ALTER TABLE document_page ADD COLUMN sync_state TEXT NOT NULL DEFAULT 'pendingUpload'",
+      );
+      await db.execute(
+        'ALTER TABLE document_page ADD COLUMN render_version INTEGER',
+      );
+    }
   }
 
   Future<void> save(Expense e) => _db.insert(
@@ -126,6 +142,12 @@ final class LocalStore {
   Future<void> clearLastSync() =>
       _db.delete('meta', where: 'key = ?', whereArgs: ['last_sync']);
 
+  /// La prochaine synchronisation des documents récupérera tout (changement de compte).
+  Future<void> clearLastDocumentSync() =>
+      _db.delete('meta', where: 'key = ?', whereArgs: [_lastDocumentSync]);
+
+  static const _lastDocumentSync = 'last_document_sync';
+
   Future<String?> setting(String key) async {
     final rows = await _db.query(
       'meta',
@@ -143,13 +165,43 @@ final class LocalStore {
   // --- Documents ---
 
   /// Enregistre le document et remplace sa liste de pages, en une transaction.
-  Future<void> saveDocument(ScannedDocument doc) => _db.transaction((tx) async {
+  Future<void> saveDocument(ScannedDocument doc) =>
+      _db.transaction((tx) => _writeDocument(tx, doc));
+
+  /// Enregistre un document reçu du serveur, sauf si l'appareil l'a changé depuis sa lecture
+  /// ([readUpdatedAt] : date lue, `null` s'il n'existait pas) ; il sera reçu à la synchro suivante.
+  /// Rend `false` si rien n'a été écrit.
+  Future<bool> saveReceivedDocument(
+    ScannedDocument doc, {
+    required DateTime? readUpdatedAt,
+  }) => _db.transaction((tx) async {
+    final rows = await tx.query(
+      'document',
+      columns: ['updated_at', 'sync_state'],
+      where: 'id = ?',
+      whereArgs: [doc.id],
+    );
+    final unchanged = readUpdatedAt == null
+        ? rows.isEmpty
+        : rows.length == 1 &&
+              rows.single['sync_state'] == SyncState.synced.name &&
+              rows.single['updated_at'] ==
+                  readUpdatedAt.toUtc().toIso8601String();
+    if (unchanged) await _writeDocument(tx, doc);
+    return unchanged;
+  });
+
+  static Future<void> _writeDocument(
+    Transaction tx,
+    ScannedDocument doc,
+  ) async {
     await tx.insert('document', {
       'id': doc.id,
       'title': doc.title,
       'created_at': doc.createdAt.toUtc().toIso8601String(),
       'updated_at': doc.updatedAt.toUtc().toIso8601String(),
       'deleted': doc.deleted ? 1 : 0,
+      'sync_state': doc.syncState.name,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
     await tx.delete(
       'document_page',
@@ -165,12 +217,69 @@ final class LocalStore {
         'processed_path': page.processedPath,
         'corners': page.corners.format(),
         'filter': page.filter.code,
+        'sync_state': page.syncState.name,
+        'render_version': page.renderVersion,
       });
     }
-  });
+  }
 
   /// Tous les documents (suppressions logiques comprises), du plus récent au plus ancien.
-  Future<List<ScannedDocument>> documents() async {
+  Future<List<ScannedDocument>> documents() => _documents();
+
+  /// Documents dont un changement local attend d'être envoyé au serveur.
+  Future<List<ScannedDocument>> pendingDocuments() =>
+      _documents(where: 'sync_state != ?', whereArgs: [SyncState.synced.name]);
+
+  Future<ScannedDocument?> document(String id) async =>
+      (await _documents(where: 'id = ?', whereArgs: [id])).firstOrNull;
+
+  /// Marque le document envoyé, sauf s'il a changé depuis (il repartira à la synchro suivante).
+  Future<void> markDocumentSynced(String id, {required DateTime updatedAt}) =>
+      _db.update(
+        'document',
+        {'sync_state': SyncState.synced.name},
+        where: 'id = ? AND updated_at = ?',
+        whereArgs: [id, updatedAt.toUtc().toIso8601String()],
+      );
+
+  /// Marque la page envoyée avec la version de rendu du serveur, sauf si elle a été réajustée depuis.
+  Future<void> markPageSynced(
+    String pageId, {
+    required String processedPath,
+    required int renderVersion,
+  }) => _db.update(
+    'document_page',
+    {'sync_state': SyncState.synced.name, 'render_version': renderVersion},
+    where: 'id = ? AND processed_path = ?',
+    whereArgs: [pageId, processedPath],
+  );
+
+  Future<DateTime?> lastDocumentSync() async {
+    final rows = await _db.query(
+      'meta',
+      where: 'key = ?',
+      whereArgs: [_lastDocumentSync],
+    );
+    return rows.isEmpty
+        ? null
+        : DateTime.parse(rows.single['value']! as String);
+  }
+
+  Future<void> setLastDocumentSync(DateTime at) => _db.insert('meta', {
+    'key': _lastDocumentSync,
+    'value': at.toUtc().toIso8601String(),
+  }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+  Future<List<ScannedDocument>> _documents({
+    String? where,
+    List<Object?>? whereArgs,
+  }) async {
+    final rows = await _db.query(
+      'document',
+      where: where,
+      whereArgs: whereArgs,
+      orderBy: 'created_at DESC',
+    );
     final pages = <String, List<ScannedPage>>{};
     for (final row in await _db.query('document_page', orderBy: 'position')) {
       (pages[row['document_id']! as String] ??= []).add(
@@ -180,11 +289,13 @@ final class LocalStore {
           processedPath: row['processed_path']! as String,
           corners: Quad.parse(row['corners']! as String),
           filter: ImageFilter.fromCode(row['filter'] as String?),
+          syncState: SyncState.values.byName(row['sync_state']! as String),
+          renderVersion: row['render_version'] as int?,
         ),
       );
     }
     return [
-      for (final row in await _db.query('document', orderBy: 'created_at DESC'))
+      for (final row in rows)
         ScannedDocument(
           id: row['id']! as String,
           title: row['title']! as String,
@@ -192,6 +303,7 @@ final class LocalStore {
           updatedAt: DateTime.parse(row['updated_at']! as String),
           pages: pages[row['id']] ?? const [],
           deleted: row['deleted'] == 1,
+          syncState: SyncState.values.byName(row['sync_state']! as String),
         ),
     ];
   }

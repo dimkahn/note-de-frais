@@ -78,6 +78,8 @@ Future<AppServices> _start() async {
   final documents = DocumentRepository(
     store: store,
     files: FileStore(Directory(p.join(dir.path, 'documents'))),
+    httpClient: httpClient,
+    account: account,
   );
   await repo.load();
   await documents.load();
@@ -89,6 +91,7 @@ Future<AppServices> _start() async {
   // En arrière-plan : l'app est utilisable immédiatement, même hors-ligne ou sans compte.
   account.refresh();
   repo.sync();
+  documents.sync();
   return (
     account: account,
     expenses: repo,

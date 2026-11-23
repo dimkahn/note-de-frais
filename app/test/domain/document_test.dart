@@ -95,4 +95,94 @@ void main() {
 
     expect(() => doc.pages.add(page('x')), throwsUnsupportedError);
   });
+
+  group('état de synchronisation', () {
+    ScannedDocument synced() => ScannedDocument(
+      id: 'doc',
+      title: 'Bail',
+      createdAt: created,
+      updatedAt: created,
+      syncState: SyncState.synced,
+      pages: [
+        ScannedPage(
+          id: 'p1',
+          originalPath: '/docs/p1/original.jpg',
+          processedPath: '/docs/p1/processed.jpg',
+          corners: Quad.inset(0.1),
+          filter: ImageFilter.enhance,
+          syncState: SyncState.synced,
+          renderVersion: 1,
+        ),
+      ],
+    );
+
+    test('un nouveau document et ses nouvelles pages attendent l\'envoi', () {
+      final doc = empty().withPage(page('p1'), at: created);
+
+      expect(doc.syncState, SyncState.pendingUpload);
+      expect(doc.pages.single.syncState, SyncState.pendingUpload);
+    });
+
+    test('un document déjà envoyé qui change attend sa mise à jour', () {
+      final doc = synced();
+
+      expect(
+        doc.renamed('Contrat', at: created).syncState,
+        SyncState.pendingUpdate,
+      );
+      expect(
+        doc.withoutPage('p1', at: created).syncState,
+        SyncState.pendingUpdate,
+      );
+      expect(
+        doc.withPage(page('p2'), at: created).syncState,
+        SyncState.pendingUpdate,
+      );
+    });
+
+    test('un document jamais envoyé reste à envoyer après un changement', () {
+      expect(
+        empty().renamed('Contrat', at: created).syncState,
+        SyncState.pendingUpload,
+      );
+    });
+
+    test('la suppression attend d\'être propagée', () {
+      expect(
+        synced().markDeleted(at: created).syncState,
+        SyncState.pendingDelete,
+      );
+      expect(
+        empty().markDeleted(at: created).syncState,
+        SyncState.pendingDelete,
+      );
+    });
+
+    test('une page envoyée puis réajustée attend son nouveau rendu', () {
+      final adjusted = synced().withPageAdjusted(
+        'p1',
+        corners: Quad.inset(0.2),
+        filter: ImageFilter.sharpen,
+        processedPath: '/docs/p1/processed-v2.jpg',
+        at: created,
+      );
+
+      expect(adjusted.pages.single.syncState, SyncState.pendingReprocess);
+      expect(adjusted.pages.single.renderVersion, 1);
+    });
+
+    test('une page jamais envoyée puis réajustée reste à envoyer', () {
+      final adjusted = empty()
+          .withPage(page('p1'), at: created)
+          .withPageAdjusted(
+            'p1',
+            corners: Quad.inset(0.2),
+            filter: ImageFilter.sharpen,
+            processedPath: '/docs/p1/processed-v2.jpg',
+            at: created,
+          );
+
+      expect(adjusted.pages.single.syncState, SyncState.pendingUpload);
+    });
+  });
 }

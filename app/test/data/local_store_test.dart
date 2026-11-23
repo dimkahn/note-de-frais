@@ -193,5 +193,172 @@ void main() {
 
       expect((await store.documents()).map((d) => d.id), ['recent', 'vieux']);
     });
+
+    test(
+      'conserve l\'état de synchronisation du document et de ses pages',
+      () async {
+        final doc = ScannedDocument(
+          id: 'd1',
+          title: 'Bail',
+          createdAt: at,
+          updatedAt: at,
+          syncState: SyncState.pendingUpdate,
+          pages: [
+            ScannedPage(
+              id: 'p1',
+              originalPath: '/docs/p1/original.jpg',
+              processedPath: '/docs/p1/processed.jpg',
+              corners: Quad.inset(0.1),
+              filter: ImageFilter.none,
+              syncState: SyncState.pendingReprocess,
+              renderVersion: 3,
+            ),
+          ],
+        );
+
+        await store.saveDocument(doc);
+
+        final read = (await store.documents()).single;
+        expect(read.syncState, SyncState.pendingUpdate);
+        expect(read.pages.single.syncState, SyncState.pendingReprocess);
+        expect(read.pages.single.renderVersion, 3);
+      },
+    );
+
+    test('liste les documents à synchroniser', () async {
+      await store.saveDocument(
+        ScannedDocument(
+          id: 'envoye',
+          title: 'A',
+          createdAt: at,
+          updatedAt: at,
+          syncState: SyncState.synced,
+        ),
+      );
+      await store.saveDocument(
+        ScannedDocument.create(id: 'local', createdAt: at),
+      );
+
+      expect((await store.pendingDocuments()).map((d) => d.id), ['local']);
+      expect((await store.document('envoye'))!.title, 'A');
+      expect(await store.document('inconnu'), isNull);
+    });
+
+    test(
+      'ne marque envoyé qu\'un document resté tel qu\'il a été envoyé',
+      () async {
+        final sent = ScannedDocument.create(id: 'd1', createdAt: at);
+        await store.saveDocument(sent);
+        await store.markDocumentSynced('d1', updatedAt: sent.updatedAt);
+        final renamed = (await store.document('d1'))!
+            .renamed('Bail', at: at.add(const Duration(minutes: 1)));
+        await store.saveDocument(renamed);
+
+        await store.markDocumentSynced('d1', updatedAt: sent.updatedAt);
+
+        expect(
+          (await store.document('d1'))!.syncState,
+          SyncState.pendingUpdate,
+        );
+      },
+    );
+
+    test(
+      'ne marque envoyée qu\'une page dont le rendu n\'a pas changé',
+      () async {
+        final doc = ScannedDocument.create(id: 'd1', createdAt: at)
+            .withPage(page('p1', ImageFilter.none), at: at)
+            .withPage(page('p2', ImageFilter.none), at: at);
+        await store.saveDocument(doc);
+
+        await store.markPageSynced(
+          'p1',
+          processedPath: '/docs/p1/processed.jpg',
+          renderVersion: 2,
+        );
+        await store.markPageSynced(
+          'p2',
+          processedPath: '/docs/p2/ancien-rendu.jpg',
+          renderVersion: 2,
+        );
+
+        final pages = (await store.document('d1'))!.pages;
+        expect(pages[0].syncState, SyncState.synced);
+        expect(pages[0].renderVersion, 2);
+        expect(pages[1].syncState, SyncState.pendingUpload);
+      },
+    );
+
+    test(
+      'mémorise et oublie la date de synchro des documents à part',
+      () async {
+        await store.setLastDocumentSync(at);
+
+        expect(await store.lastDocumentSync(), at);
+        expect(await store.lastSync(), isNull);
+        await store.clearLastSync();
+        expect(await store.lastDocumentSync(), at);
+        await store.clearLastDocumentSync();
+        expect(await store.lastDocumentSync(), isNull);
+      },
+    );
+
+    test(
+      'les documents d\'avant la synchro attendent leur premier envoi',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('ndf_migration_v4');
+        final path = '${dir.path}/v4.db';
+        final v4 = await databaseFactoryFfi.openDatabase(
+          path,
+          options: OpenDatabaseOptions(
+            version: 4,
+            onCreate: (db, _) async {
+              await db.execute(
+                'CREATE TABLE expense (id TEXT PRIMARY KEY, sync_state TEXT NOT NULL)',
+              );
+              await db.execute(
+                'CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)',
+              );
+              await db.execute(
+                'CREATE TABLE document (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL, '
+                'updated_at TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)',
+              );
+              await db.execute(
+                'CREATE TABLE document_page (id TEXT PRIMARY KEY, document_id TEXT NOT NULL, '
+                'position INTEGER NOT NULL, original_path TEXT NOT NULL, processed_path TEXT NOT NULL, '
+                'corners TEXT NOT NULL, filter TEXT NOT NULL)',
+              );
+              await db.insert('document', {
+                'id': 'ancien',
+                'title': 'Bail',
+                'created_at': at.toIso8601String(),
+                'updated_at': at.toIso8601String(),
+              });
+              await db.insert('document_page', {
+                'id': 'p1',
+                'document_id': 'ancien',
+                'position': 0,
+                'original_path': '/docs/p1/original.jpg',
+                'processed_path': '/docs/p1/processed.jpg',
+                'corners': Quad.inset(0.1).format(),
+                'filter': 'ENHANCE',
+              });
+            },
+          ),
+        );
+        await v4.close();
+
+        final migrated = await LocalStore.open(
+          path,
+          factory: databaseFactoryFfi,
+        );
+
+        final doc = (await migrated.pendingDocuments()).single;
+        expect(doc.syncState, SyncState.pendingUpload);
+        expect(doc.pages.single.syncState, SyncState.pendingUpload);
+        await migrated.close();
+        await dir.delete(recursive: true);
+      },
+    );
   });
 }

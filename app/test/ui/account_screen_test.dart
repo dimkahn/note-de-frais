@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:note_de_frais/data/account_repository.dart';
+import 'package:note_de_frais/data/document_repository.dart';
 import 'package:note_de_frais/data/expense_repository.dart';
 import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/domain/expense.dart';
+import 'package:note_de_frais/domain/quad.dart';
 import 'package:note_de_frais/ui/account_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -25,6 +27,7 @@ void main() {
   late FakeServer server;
   late AccountRepository account;
   late ExpenseRepository expenses;
+  late DocumentRepository documents;
   late MemoryDeviceKeyStore deviceKeys;
   late FakeBiometricAuth biometrics;
 
@@ -63,12 +66,20 @@ void main() {
         pollInterval: null,
       );
       await expenses.load();
+      documents = DocumentRepository(
+        store: store,
+        files: FileStore(Directory.systemTemp),
+        httpClient: server.client,
+        account: account,
+      );
+      await documents.load();
     });
     await tester.pumpWidget(
       MultiProvider(
         providers: [
           ChangeNotifierProvider.value(value: account),
           ChangeNotifierProvider.value(value: expenses),
+          ChangeNotifierProvider.value(value: documents),
         ],
         child: const MaterialApp(home: AccountScreen()),
       ),
@@ -77,10 +88,24 @@ void main() {
   }
 
   tearDown(() async {
+    documents.dispose();
     expenses.dispose();
     account.dispose();
     await store.close();
   });
+
+  /// L'écran se stabilise, puis les synchros que la connexion lance en arrière-plan (dépenses et
+  /// documents) se terminent.
+  Future<void> settle(WidgetTester tester) async {
+    await settleRealAsync(tester);
+    for (var i = 0; i < 60; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+      if (!expenses.isSyncing && !documents.isSyncing) break;
+    }
+  }
 
   Future<void> submit(
     WidgetTester tester, {
@@ -102,7 +127,7 @@ void main() {
       password,
     );
     await tester.tap(find.widgetWithText(FilledButton, button));
-    await settleRealAsync(tester);
+    await settle(tester);
   }
 
   testWidgets(
@@ -283,6 +308,71 @@ void main() {
     );
   });
 
+  group('documents refusés faute d\'espace', () {
+    Future<void> scanDocument() async {
+      final photo = File('${Directory.systemTemp.path}/ndf_quota_doc.jpg');
+      await photo.writeAsBytes([1, 2, 3]);
+      await documents.create([
+        PageCapture(
+          photoPath: photo.path,
+          corners: Quad.inset(0.1),
+          filter: ImageFilter.enhance,
+          processedJpeg: [4],
+        ),
+      ]);
+    }
+
+    testWidgets('un document refusé est signalé comme resté sur l\'appareil', (
+      tester,
+    ) async {
+      await pumpAccount(tester);
+      server.quotaFull = true;
+      server.accounts['alice@example.com'] = password;
+
+      await tester.runAsync(() async {
+        await account.login('alice@example.com', password);
+        await scanDocument();
+      });
+      await tester.pump();
+
+      expect(find.textContaining('Espace en ligne plein'), findsOneWidget);
+      expect(
+        find.textContaining('1 document reste sur cet appareil'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('dépenses et documents refusés sont comptés ensemble', (
+      tester,
+    ) async {
+      await pumpAccount(tester);
+      server.quotaFull = true;
+      server.accounts['alice@example.com'] = password;
+
+      await tester.runAsync(() async {
+        final photo = File('${Directory.systemTemp.path}/ndf_quota_both.jpg');
+        await photo.writeAsBytes([1, 2, 3]);
+        await store.save(
+          Expense.draft(
+            id: 'quota',
+            originalPath: photo.path,
+            filter: ImageFilter.enhance,
+          ),
+        );
+        await account.login('alice@example.com', password);
+        await expenses.sync();
+        await scanDocument();
+      });
+      await tester.pump();
+
+      expect(find.textContaining('Espace en ligne plein'), findsOneWidget);
+      expect(
+        find.textContaining('1 dépense et 1 document restent sur cet appareil'),
+        findsOneWidget,
+      );
+    });
+  });
+
   testWidgets('des identifiants refusés affichent un message clair', (
     tester,
   ) async {
@@ -321,7 +411,7 @@ void main() {
 
       await tester.ensureVisible(find.text(continueWithGoogle));
       await tester.tap(find.text(continueWithGoogle));
-      await settleRealAsync(tester);
+      await settle(tester);
 
       expect(account.signedIn, isTrue);
       expect(find.text('alice@gmail.com'), findsOneWidget);
@@ -339,7 +429,7 @@ void main() {
 
       await tester.ensureVisible(find.text(continueWithGoogle));
       await tester.tap(find.text(continueWithGoogle));
-      await settleRealAsync(tester);
+      await settle(tester);
 
       expect(account.signedIn, isFalse);
       expect(find.text('Connexion Google refusée, réessayez.'), findsOneWidget);
@@ -359,7 +449,7 @@ void main() {
 
     await tester.ensureVisible(find.text('Se déconnecter'));
     await tester.tap(find.text('Se déconnecter'));
-    await settleRealAsync(tester);
+    await settle(tester);
 
     expect(account.signedIn, isFalse);
     expect(find.widgetWithText(FilledButton, 'Se connecter'), findsOneWidget);
@@ -383,7 +473,7 @@ void main() {
     );
     await tester.ensureVisible(find.text('Enregistrer l\'adresse'));
     await tester.tap(find.text('Enregistrer l\'adresse'));
-    await settleRealAsync(tester);
+    await settle(tester);
 
     expect(account.settings.baseUrl, 'http://192.168.1.10:8080');
     expect(
@@ -430,7 +520,7 @@ void main() {
     Future<void> tapButton(WidgetTester tester, String label) async {
       await tester.ensureVisible(find.text(label));
       await tester.tap(find.text(label));
-      await settleRealAsync(tester);
+      await settle(tester);
     }
 
     testWidgets('sans biométrie sur l\'appareil, elle n\'est pas proposée', (
