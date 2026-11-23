@@ -46,6 +46,8 @@ public class Expense {
     @Enumerated(EnumType.STRING)
     private ImageFilter filter = ImageFilter.ENHANCE;
     private boolean cropped;
+    /** Contour choisi sur l'appareil ({@link fr.notedefrais.imaging.Quad#format()}) ; null = détection auto. */
+    private String corners;
 
     // --- Traitement ---
     @Enumerated(EnumType.STRING)
@@ -102,8 +104,9 @@ public class Expense {
         processingError = error == null ? null : error.substring(0, Math.min(error.length(), 2000));
     }
 
-    public void resetProcessing(ImageFilter newFilter) {
+    public void resetProcessing(ImageFilter newFilter, String newCorners) {
         if (newFilter != null) filter = newFilter;
+        if (newCorners != null) corners = newCorners;
         status = ProcessingStatus.PENDING;
         processingError = null;
     }
@@ -158,6 +161,8 @@ public class Expense {
     public ImageFilter getFilter() { return filter; }
     public void setFilter(ImageFilter filter) { this.filter = filter; }
     public boolean isCropped() { return cropped; }
+    public String getCorners() { return corners; }
+    public void setCorners(String corners) { this.corners = corners; }
     public void setCropped(boolean cropped) { this.cropped = cropped; }
     public ProcessingStatus getStatus() { return status; }
     public void setStatus(ProcessingStatus status) { this.status = status; }

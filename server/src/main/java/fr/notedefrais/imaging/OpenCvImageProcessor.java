@@ -13,7 +13,11 @@ import org.opencv.imgproc.CLAHE;
 import org.opencv.imgproc.Imgproc;
 
 /**
- * Pipeline : décodage → détection du contour du document → correction de perspective → filtre.
+ * Pipeline : décodage (orientation EXIF appliquée) → contour (imposé par l'utilisateur ou détecté)
+ * → correction de perspective → filtre.
+ *
+ * <p>Les paramètres (seuils, CLAHE, masque flou, seuillage adaptatif) sont dupliqués dans
+ * {@code app/lib/scan/document_scanner.dart} : les garder alignés.
  *
  * <p>La détection travaille sur une copie réduite (rapide, robuste au bruit) puis les coins sont
  * remis à l'échelle pour redresser l'image pleine résolution.
@@ -33,18 +37,26 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     private static final int MAX_OUTPUT_SIDE = 2400;
 
     @Override
-    public ProcessedImage process(byte[] original, ImageFilter filter) {
+    public ProcessedImage process(byte[] original, ImageFilter filter, Quad corners) {
         Mat src = Imgcodecs.imdecode(new MatOfByte(original), Imgcodecs.IMREAD_COLOR);
         if (src.empty()) {
             throw new ImageProcessingException("Image illisible ou format non supporté");
         }
         try (var scope = new MatScope(src)) {
-            Optional<Point[]> corners = detectDocument(src, scope);
-            Mat doc = corners.map(c -> scope.add(warp(src, c))).orElse(src);
+            Optional<Point[]> quad = corners != null
+                    ? Optional.of(toPoints(corners, src))
+                    : detectDocument(src, scope);
+            Mat doc = quad.map(c -> scope.add(warp(src, c))).orElse(src);
             Mat resized = scope.add(limitSize(doc));
             Mat filtered = scope.add(applyFilter(resized, filter, scope));
-            return new ProcessedImage(encodeJpeg(filtered), corners.isPresent());
+            return new ProcessedImage(encodeJpeg(filtered), quad.isPresent());
         }
+    }
+
+    private static Point[] toPoints(Quad quad, Mat src) {
+        return Arrays.stream(quad.toPixels(src.cols(), src.rows()))
+                .map(p -> new Point(p[0], p[1]))
+                .toArray(Point[]::new);
     }
 
     // --- Détection ---

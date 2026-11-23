@@ -1,6 +1,7 @@
 package fr.notedefrais.web;
 
 import fr.notedefrais.expense.ExpenseNotFoundException;
+import fr.notedefrais.imaging.InvalidQuadException;
 import fr.notedefrais.storage.OriginalAlreadyExistsException;
 import fr.notedefrais.storage.StorageException;
 import org.slf4j.Logger;
@@ -23,6 +24,11 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(BadRequestException.class)
     ProblemDetail badRequest(BadRequestException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidQuadException.class)
+    ProblemDetail invalidCorners(InvalidQuadException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 

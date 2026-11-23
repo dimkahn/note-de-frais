@@ -6,6 +6,7 @@ import fr.notedefrais.extraction.ReceiptExtractor;
 import fr.notedefrais.extraction.ReceiptFields;
 import fr.notedefrais.imaging.ImageProcessor;
 import fr.notedefrais.imaging.ProcessedImage;
+import fr.notedefrais.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -42,7 +43,8 @@ public class ExpenseProcessor {
         String processedFile;
         try {
             byte[] original = storage.read(id, expense.getOriginalFile());
-            image = imageProcessor.process(original, expense.getFilter());
+            Quad corners = expense.getCorners() == null ? null : Quad.parse(expense.getCorners());
+            image = imageProcessor.process(original, expense.getFilter(), corners);
             processedFile = storage.saveProcessed(id, image.jpeg());
         } catch (RuntimeException e) {
             log.warn("Traitement d'image impossible pour {}", id, e);

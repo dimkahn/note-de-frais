@@ -10,6 +10,7 @@ import fr.notedefrais.extraction.ReceiptFields;
 import fr.notedefrais.imaging.ImageProcessingException;
 import fr.notedefrais.imaging.ImageProcessor;
 import fr.notedefrais.imaging.ProcessedImage;
+import fr.notedefrais.imaging.Quad;
 import fr.notedefrais.storage.LocalFileStorage;
 import java.math.BigDecimal;
 import java.nio.file.Path;
@@ -63,7 +64,7 @@ class ExpenseServiceTest {
     void l_enregistrement_conserve_l_original_et_planifie_le_traitement() {
         var id = UUID.randomUUID();
 
-        Expense e = service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE);
+        Expense e = service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
 
         assertThat(e.getStatus()).isEqualTo(ProcessingStatus.PENDING);
         assertThat(storage.read(id, e.getOriginalFile())).containsExactly(PHOTO);
@@ -73,9 +74,9 @@ class ExpenseServiceTest {
     @Test
     void l_enregistrement_est_idempotent_et_ne_touche_pas_l_original() {
         var id = UUID.randomUUID();
-        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE);
+        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
 
-        Expense again = service.register(id, new byte[]{1}, "image/jpeg", ImageFilter.NONE);
+        Expense again = service.register(id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null);
 
         assertThat(storage.read(id, again.getOriginalFile())).containsExactly(PHOTO);
         assertThat(again.getFilter()).isEqualTo(ImageFilter.ENHANCE);
@@ -140,7 +141,7 @@ class ExpenseServiceTest {
         service.update(id, new ExpenseUpdate("Bistrot Corrigé", Category.RESTAURANT, LocalDate.of(2026, 3, 10),
                 new BigDecimal("45.00"), null, "EUR", "Paris", "FR", null, "CB", "Repas équipe"));
 
-        service.reprocess(id, ImageFilter.SCAN_BW);
+        service.reprocess(id, ImageFilter.SCAN_BW, null);
         processor.process(id);
 
         Expense e = repository.findById(id).orElseThrow();
@@ -149,6 +150,34 @@ class ExpenseServiceTest {
         assertThat(e.getAmountTotal()).isEqualByComparingTo("45.00");
         assertThat(e.getFilter()).isEqualTo(ImageFilter.SCAN_BW);
         assertThat(imageProcessor.filters).containsExactly(ImageFilter.ENHANCE, ImageFilter.SCAN_BW);
+    }
+
+    @Test
+    void les_coins_choisis_a_la_capture_sont_conserves_et_reutilises() {
+        var id = UUID.randomUUID();
+        var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
+        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, quad);
+
+        processor.process(id);
+        service.reprocess(id, ImageFilter.SCAN_BW, null);
+        processor.process(id);
+
+        assertThat(repository.findById(id).orElseThrow().getCorners()).isEqualTo(quad.format());
+        assertThat(imageProcessor.corners).containsExactly(quad, quad);
+    }
+
+    @Test
+    void de_nouveaux_coins_au_retraitement_remplacent_les_precedents() {
+        var id = register();
+        var quad = Quad.parse("0.2,0.2,0.8,0.2,0.8,0.8,0.2,0.8");
+
+        service.reprocess(id, null, quad);
+        processor.process(id);
+
+        Expense e = repository.findById(id).orElseThrow();
+        assertThat(e.getCorners()).isEqualTo(quad.format());
+        assertThat(e.getFilter()).isEqualTo(ImageFilter.ENHANCE);
+        assertThat(imageProcessor.corners).containsExactly(quad);
     }
 
     @Test
@@ -182,7 +211,7 @@ class ExpenseServiceTest {
 
     private UUID register() {
         var id = UUID.randomUUID();
-        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE);
+        service.register(id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
         return id;
     }
 
@@ -201,12 +230,14 @@ class ExpenseServiceTest {
     static final class FakeImageProcessor implements ImageProcessor {
         final List<byte[]> inputs = new ArrayList<>();
         final List<ImageFilter> filters = new ArrayList<>();
+        final List<Quad> corners = new ArrayList<>();
         ImageProcessingException failure;
 
         @Override
-        public ProcessedImage process(byte[] original, ImageFilter filter) {
+        public ProcessedImage process(byte[] original, ImageFilter filter, Quad quad) {
             inputs.add(original);
             filters.add(filter);
+            corners.add(quad);
             if (failure != null) throw failure;
             return new ProcessedImage(PROCESSED, true);
         }

@@ -22,7 +22,7 @@ class OpenCvImageProcessorTest {
     void recadre_un_ticket_photographie_de_travers_sur_fond_sombre() throws IOException {
         byte[] photo = photoOfReceipt(1200, 1600, 500, 900, 12);
 
-        ProcessedImage result = processor.process(photo, ImageFilter.NONE);
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -35,7 +35,7 @@ class OpenCvImageProcessorTest {
     void ne_recadre_pas_quand_aucun_document_n_est_detecte() throws IOException {
         byte[] uniform = encode(filled(800, 600, new Color(200, 200, 200)));
 
-        ProcessedImage result = processor.process(uniform, ImageFilter.NONE);
+        ProcessedImage result = processor.process(uniform, ImageFilter.NONE, null);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isFalse();
@@ -48,7 +48,7 @@ class OpenCvImageProcessorTest {
     void chaque_filtre_produit_un_jpeg_valide(ImageFilter filter) throws IOException {
         byte[] photo = photoOfReceipt(900, 1200, 400, 700, -8);
 
-        ProcessedImage result = processor.process(photo, filter);
+        ProcessedImage result = processor.process(photo, filter, null);
 
         assertThat(decode(result.jpeg())).isNotNull();
     }
@@ -57,8 +57,8 @@ class OpenCvImageProcessorTest {
     void le_filtre_netteté_augmente_le_contraste_local() throws IOException {
         byte[] photo = photoOfReceipt(900, 1200, 400, 700, 0);
 
-        double plain = sharpness(processor.process(photo, ImageFilter.NONE).jpeg());
-        double enhanced = sharpness(processor.process(photo, ImageFilter.ENHANCE).jpeg());
+        double plain = sharpness(processor.process(photo, ImageFilter.NONE, null).jpeg());
+        double enhanced = sharpness(processor.process(photo, ImageFilter.ENHANCE, null).jpeg());
 
         assertThat(enhanced).isGreaterThan(plain);
     }
@@ -67,7 +67,7 @@ class OpenCvImageProcessorTest {
     void le_mode_scan_produit_une_image_quasi_binaire() throws IOException {
         byte[] photo = photoOfReceipt(900, 1200, 400, 700, 5);
 
-        BufferedImage out = decode(processor.process(photo, ImageFilter.SCAN_BW).jpeg());
+        BufferedImage out = decode(processor.process(photo, ImageFilter.SCAN_BW, null).jpeg());
 
         long extremes = 0, total = 0;
         for (int y = 0; y < out.getHeight(); y += 4) {
@@ -78,5 +78,18 @@ class OpenCvImageProcessorTest {
             }
         }
         assertThat((double) extremes / total).isGreaterThan(0.9);
+    }
+
+    @Test
+    void utilise_les_coins_choisis_par_l_utilisateur_sans_detection() throws IOException {
+        byte[] uniform = encode(filled(1000, 800, new Color(200, 200, 200)));
+        Quad quarter = Quad.parse("0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75");
+
+        ProcessedImage result = processor.process(uniform, ImageFilter.NONE, quarter);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(result.cropped()).isTrue();
+        assertThat(out.getWidth()).isBetween(495, 505);
+        assertThat(out.getHeight()).isBetween(395, 405);
     }
 }

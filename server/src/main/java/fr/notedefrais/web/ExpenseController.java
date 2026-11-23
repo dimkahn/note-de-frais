@@ -2,6 +2,7 @@ package fr.notedefrais.web;
 
 import fr.notedefrais.expense.*;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
+import fr.notedefrais.imaging.Quad;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.net.URI;
@@ -32,13 +33,14 @@ public class ExpenseController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ExpenseDto> upload(@RequestParam("file") MultipartFile file,
                                              @RequestParam(required = false) UUID id,
-                                             @RequestParam(required = false) ImageFilter filter) throws IOException {
+                                             @RequestParam(required = false) ImageFilter filter,
+                                             @RequestParam(required = false) String corners) throws IOException {
         if (file.isEmpty()) throw new BadRequestException("Fichier vide");
         String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
         if (!ACCEPTED_TYPES.contains(type)) throw new UnsupportedImageTypeException(type);
 
         UUID expenseId = id == null ? UUID.randomUUID() : id;
-        Expense expense = service.register(expenseId, file.getBytes(), type, filter);
+        Expense expense = service.register(expenseId, file.getBytes(), type, filter, parseCorners(corners));
         return ResponseEntity.accepted()
                 .location(URI.create("/api/expenses/" + expenseId))
                 .body(ExpenseDto.of(expense));
@@ -83,8 +85,10 @@ public class ExpenseController {
     }
 
     @PostMapping("/{id}/reprocess")
-    public ResponseEntity<ExpenseDto> reprocess(@PathVariable UUID id, @RequestParam(required = false) ImageFilter filter) {
-        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(id, filter)));
+    public ResponseEntity<ExpenseDto> reprocess(@PathVariable UUID id,
+                                                @RequestParam(required = false) ImageFilter filter,
+                                                @RequestParam(required = false) String corners) {
+        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(id, filter, parseCorners(corners))));
     }
 
     @DeleteMapping("/{id}")
@@ -104,5 +108,9 @@ public class ExpenseController {
     @GetMapping(value = "/{id}/processed", produces = MediaType.IMAGE_JPEG_VALUE)
     public byte[] processed(@PathVariable UUID id) {
         return service.processed(id);
+    }
+
+    private static Quad parseCorners(String corners) {
+        return corners == null || corners.isBlank() ? null : Quad.parse(corners);
     }
 }

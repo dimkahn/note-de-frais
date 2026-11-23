@@ -1,6 +1,7 @@
 package fr.notedefrais.expense;
 
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
+import fr.notedefrais.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
 import java.time.Instant;
 import java.util.List;
@@ -30,7 +31,7 @@ public class ExpenseService {
      * Enregistre un justificatif. Idempotent : un second envoi avec le même identifiant
      * (reprise de synchronisation) renvoie la dépense existante sans toucher à l'original.
      */
-    public Expense register(UUID id, byte[] original, String contentType, ImageFilter filter) {
+    public Expense register(UUID id, byte[] original, String contentType, ImageFilter filter, Quad corners) {
         var existing = repository.findById(id);
         if (existing.isPresent()) return existing.get();
 
@@ -38,6 +39,7 @@ public class ExpenseService {
         expense.setOriginalFile(storage.saveOriginal(id, original, extensionOf(contentType)));
         expense.setOriginalContentType(contentType);
         expense.setFilter(filter == null ? ImageFilter.ENHANCE : filter);
+        expense.setCorners(corners == null ? null : corners.format());
         Expense saved = repository.save(expense);
         queue.submit(id);
         return saved;
@@ -74,10 +76,10 @@ public class ExpenseService {
         return repository.save(expense);
     }
 
-    /** Relance le traitement depuis l'original avec un autre filtre. */
-    public Expense reprocess(UUID id, ImageFilter filter) {
+    /** Relance le traitement depuis l'original (autre filtre et/ou autres coins ; null = inchangé). */
+    public Expense reprocess(UUID id, ImageFilter filter, Quad corners) {
         Expense expense = get(id);
-        expense.resetProcessing(filter);
+        expense.resetProcessing(filter, corners == null ? null : corners.format());
         Expense saved = repository.save(expense);
         queue.submit(id);
         return saved;

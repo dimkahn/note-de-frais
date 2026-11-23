@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import fr.notedefrais.expense.*;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
+import fr.notedefrais.imaging.Quad;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -33,7 +34,7 @@ class ExpenseControllerTest {
     @Test
     void l_envoi_d_un_justificatif_repond_202_avec_la_depense_en_attente() throws Exception {
         var id = UUID.randomUUID();
-        given(service.register(eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW))).willReturn(new Expense(id));
+        given(service.register(eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW), eq(null))).willReturn(new Expense(id));
 
         mvc.perform(multipart("/api/expenses")
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1, 2}))
@@ -43,6 +44,27 @@ class ExpenseControllerTest {
                 .andExpect(header().string("Location", "/api/expenses/" + id))
                 .andExpect(jsonPath("$.id").value(id.toString()))
                 .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void transmet_les_coins_choisis_sur_l_appareil() throws Exception {
+        var id = UUID.randomUUID();
+        var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
+        given(service.register(eq(id), any(), eq("image/jpeg"), any(), eq(quad))).willReturn(new Expense(id));
+
+        mvc.perform(multipart("/api/expenses")
+                        .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
+                        .param("id", id.toString())
+                        .param("corners", quad.format()))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void refuse_des_coins_invalides() throws Exception {
+        mvc.perform(multipart("/api/expenses")
+                        .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
+                        .param("corners", "0,0,1,1,1,0,0,1"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
