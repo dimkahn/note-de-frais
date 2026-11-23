@@ -33,7 +33,7 @@ public class InfrastructureConfig {
     AccountService accountService(AccountRepository accounts, SessionRepository sessions, DeviceKeyRepository devices,
                                   AppProperties props) {
         return new AccountService(accounts, sessions, devices, new BCryptPasswordEncoder(), Clock.systemUTC(),
-                props.sessionTtl());
+                props.sessionTtl(), props.planLimits());
     }
 
     @Bean

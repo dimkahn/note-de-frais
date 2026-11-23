@@ -2,6 +2,13 @@ app:
   storage-dir: ${java.io.tmpdir}/notedefrais-test-storage
   api-token: ""
   session-ttl: 1d
+  plans:
+    free:
+      quota: 100MB
+      ai-analysis: false
+    premium:
+      quota: 1GB
+      ai-analysis: true
   claude:
     enabled: false
     model: claude-opus-5-5

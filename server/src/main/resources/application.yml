@@ -5,6 +5,14 @@ app:
   api-token: ${NDF_API_TOKEN:}
   # Durée de validité d'une session (connexion e-mail / mot de passe), format ISO-8601 ou 30d
   session-ttl: ${NDF_SESSION_TTL:90d}
+  # Offres : espace en ligne (originaux + rendus) et analyse IA par Claude
+  plans:
+    free:
+      quota: 100MB
+      ai-analysis: false
+    premium:
+      quota: 1GB
+      ai-analysis: true
   claude:
     enabled: ${NDF_CLAUDE_ENABLED:true}
     model: ${NDF_CLAUDE_MODEL:claude-opus-5-5}

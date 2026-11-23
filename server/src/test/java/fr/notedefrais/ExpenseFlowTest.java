@@ -26,7 +26,7 @@ class ExpenseFlowTest {
     MockMvc mvc;
 
     @Test
-    void un_ticket_envoye_est_recadre_et_l_original_reste_disponible() throws Exception {
+    void un_ticket_envoye_en_gratuit_est_recadre_sans_analyse_et_compte_dans_l_usage() throws Exception {
         var session = TestSessions.signUp(mvc);
         var id = UUID.randomUUID();
         byte[] photo = TestImages.photoOfReceipt(1200, 1600, 500, 900, 10);
@@ -37,16 +37,21 @@ class ExpenseFlowTest {
                         .with(session))
                 .andExpect(status().isAccepted());
 
-        // Extraction désactivée en test : le traitement se termine en EXTRACTION_FAILED avec l'image recadrée.
+        // Offre gratuite : pas d'analyse IA, le traitement se termine en NOT_INCLUDED avec l'image recadrée.
         await().atMost(Duration.ofSeconds(20)).untilAsserted(() ->
                 mvc.perform(get("/api/expenses/{id}", id).with(session))
-                        .andExpect(jsonPath("$.status").value("EXTRACTION_FAILED"))
+                        .andExpect(jsonPath("$.status").value("NOT_INCLUDED"))
                         .andExpect(jsonPath("$.cropped").value(true))
                         .andExpect(jsonPath("$.hasProcessedImage").value(true)));
 
         byte[] original = mvc.perform(get("/api/expenses/{id}/original", id).with(session))
                 .andReturn().getResponse().getContentAsByteArray();
         assertThat(original).isEqualTo(photo);
-        mvc.perform(get("/api/expenses/{id}/processed", id).with(session)).andExpect(status().isOk());
+        byte[] processed = mvc.perform(get("/api/expenses/{id}/processed", id).with(session))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        mvc.perform(get("/api/account").with(session))
+                .andExpect(jsonPath("$.usedBytes").value(photo.length + processed.length))
+                .andExpect(jsonPath("$.aiAnalysis").value(false));
     }
 }

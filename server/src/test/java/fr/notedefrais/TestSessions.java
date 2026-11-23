@@ -19,10 +19,13 @@ final class TestSessions {
     }
 
     static String signUpToken(MockMvc mvc) throws Exception {
+        return signUpToken(mvc, UUID.randomUUID() + "@example.com");
+    }
+
+    static String signUpToken(MockMvc mvc, String email) throws Exception {
         String body = mvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"%s@example.com\",\"password\":\"correct horse battery\"}"
-                                .formatted(UUID.randomUUID())))
+                        .content("{\"email\":\"%s\",\"password\":\"correct horse battery\"}".formatted(email)))
                 .andExpect(status().isCreated())
                 .andReturn().getResponse().getContentAsString();
         return JsonPath.read(body, "$.token");

@@ -64,6 +64,19 @@ class ExpenseControllerTest {
     }
 
     @Test
+    void un_envoi_au_dela_du_quota_repond_403_avec_l_usage_et_le_quota() throws Exception {
+        given(service.register(eq(OWNER), any(), any(), any(), any(), any()))
+                .willThrow(new QuotaExceededException(104_000_000L, 104_857_600L));
+
+        mvc.perform(multipart("/api/expenses").with(SESSION)
+                        .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1})))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("QUOTA_EXCEEDED"))
+                .andExpect(jsonPath("$.usedBytes").value(104_000_000L))
+                .andExpect(jsonPath("$.quotaBytes").value(104_857_600L));
+    }
+
+    @Test
     void transmet_les_coins_choisis_sur_l_appareil() throws Exception {
         var id = UUID.randomUUID();
         var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");

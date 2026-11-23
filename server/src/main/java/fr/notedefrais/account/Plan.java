@@ -1,6 +1,6 @@
 package fr.notedefrais.account;
 
-/** Offre d'un compte ; les quotas et l'analyse IA associés viendront avec la phase « Offres et quotas ». */
+/** Offre d'un compte ; ce qu'elle permet ({@link PlanLimits}) est lu dans {@code app.plans}. */
 public enum Plan {
     FREE,
     PREMIUM

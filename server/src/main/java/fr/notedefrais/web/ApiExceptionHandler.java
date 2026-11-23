@@ -1,10 +1,12 @@
 package fr.notedefrais.web;
 
+import fr.notedefrais.account.AccountNotFoundException;
 import fr.notedefrais.account.EmailAlreadyUsedException;
 import fr.notedefrais.account.InvalidCredentialsException;
 import fr.notedefrais.account.InvalidDeviceKeyException;
 import fr.notedefrais.account.InvalidPasswordException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
+import fr.notedefrais.expense.QuotaExceededException;
 import fr.notedefrais.imaging.InvalidQuadException;
 import fr.notedefrais.storage.OriginalAlreadyExistsException;
 import fr.notedefrais.storage.StorageException;
@@ -24,6 +26,21 @@ public class ApiExceptionHandler {
     @ExceptionHandler(ExpenseNotFoundException.class)
     ProblemDetail notFound(ExpenseNotFoundException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    @ExceptionHandler(AccountNotFoundException.class)
+    ProblemDetail accountNotFound(AccountNotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    /** Corps exploitable par l'app : {@code code}, {@code usedBytes}, {@code quotaBytes}. */
+    @ExceptionHandler(QuotaExceededException.class)
+    ProblemDetail quotaExceeded(QuotaExceededException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, e.getMessage());
+        problem.setProperty("code", "QUOTA_EXCEEDED");
+        problem.setProperty("usedBytes", e.usedBytes());
+        problem.setProperty("quotaBytes", e.quotaBytes());
+        return problem;
     }
 
     @ExceptionHandler(BadRequestException.class)

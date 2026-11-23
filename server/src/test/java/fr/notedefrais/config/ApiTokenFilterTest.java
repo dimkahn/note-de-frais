@@ -55,7 +55,7 @@ class ApiTokenFilterTest {
     }
 
     private static ApiTokenFilter filterWithToken(String token) {
-        return new ApiTokenFilter(new AppProperties("storage", token, null, null));
+        return new ApiTokenFilter(new AppProperties("storage", token, null, null, null));
     }
 
     private static MockHttpServletRequest request(String uri, String token) {

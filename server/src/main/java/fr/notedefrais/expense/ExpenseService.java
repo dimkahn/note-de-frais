@@ -1,12 +1,16 @@
 package fr.notedefrais.expense;
 
+import fr.notedefrais.account.AccountLimits;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
 import fr.notedefrais.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
+import fr.notedefrais.storage.StorageException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.data.domain.Sort;
@@ -15,22 +19,28 @@ import org.springframework.stereotype.Service;
 @Service
 public class ExpenseService {
 
+    private static final Logger log = LoggerFactory.getLogger(ExpenseService.class);
     private static final Sort NEWEST_FIRST = Sort.by(Sort.Order.desc("expenseDate"), Sort.Order.desc("createdAt"));
 
     private final ExpenseRepository repository;
     private final FileStorage storage;
     private final ProcessingQueue queue;
+    private final AccountLimits limits;
 
-    public ExpenseService(ExpenseRepository repository, FileStorage storage, ProcessingQueue queue) {
+    public ExpenseService(ExpenseRepository repository, FileStorage storage, ProcessingQueue queue,
+                          AccountLimits limits) {
         this.repository = repository;
         this.storage = storage;
         this.queue = queue;
+        this.limits = limits;
     }
 
     /**
      * Enregistre un justificatif. Idempotent : un second envoi avec le même identifiant
      * (reprise de synchronisation) renvoie la dépense existante sans toucher à l'original.
      * Un identifiant déjà pris par un autre compte est traité comme introuvable.
+     *
+     * @throws QuotaExceededException si l'original ferait dépasser l'espace de l'offre (rien n'est stocké)
      */
     public Expense register(UUID ownerId, UUID id, byte[] original, String contentType, ImageFilter filter, Quad corners) {
         var existing = repository.findById(id);
@@ -39,8 +49,13 @@ public class ExpenseService {
             return existing.get();
         }
 
+        long used = usedBytes(ownerId);
+        long quota = limits.limitsOf(ownerId).quotaBytes();
+        if (used + original.length > quota) throw new QuotaExceededException(used, quota);
+
         var expense = new Expense(id, ownerId);
         expense.setOriginalFile(storage.saveOriginal(id, original, extensionOf(contentType)));
+        expense.setSizeBytes((long) original.length);
         expense.setOriginalContentType(contentType);
         expense.setFilter(filter == null ? ImageFilter.ENHANCE : filter);
         expense.setCorners(corners == null ? null : corners.format());
@@ -54,6 +69,25 @@ public class ExpenseService {
     public void resumePending() {
         repository.findByStatusAndDeletedFalse(ProcessingStatus.PENDING)
                 .forEach(e -> queue.submit(e.getId()));
+    }
+
+    /**
+     * Calcule, depuis les fichiers, la taille des dépenses enregistrées avant les quotas. Une dépense
+     * aux fichiers illisibles reste sans taille (non comptée) et sera retentée au prochain démarrage.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void backfillSizes() {
+        for (Expense expense : repository.findBySizeBytesIsNull()) {
+            try {
+                repository.recordMissingSize(expense.getId(), sizeOfFiles(expense));
+            } catch (StorageException e) {
+                log.warn("Taille non calculable pour la dépense {}", expense.getId(), e);
+            }
+        }
+    }
+
+    public long usedBytes(UUID ownerId) {
+        return repository.usedBytes(ownerId);
     }
 
     public Expense get(UUID ownerId, UUID id) {
@@ -103,6 +137,12 @@ public class ExpenseService {
         Expense e = get(ownerId, id);
         if (e.getProcessedFile() == null) throw new ExpenseNotFoundException(id);
         return storage.read(id, e.getProcessedFile());
+    }
+
+    private long sizeOfFiles(Expense e) {
+        long size = storage.read(e.getId(), e.getOriginalFile()).length;
+        if (e.getProcessedFile() != null) size += storage.read(e.getId(), e.getProcessedFile()).length;
+        return size;
     }
 
     private static String extensionOf(String contentType) {

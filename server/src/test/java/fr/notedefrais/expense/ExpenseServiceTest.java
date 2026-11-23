@@ -2,7 +2,9 @@ package fr.notedefrais.expense;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import fr.notedefrais.account.PlanLimits;
 import fr.notedefrais.extraction.ExtractionException;
 import fr.notedefrais.extraction.ReceiptExtraction;
 import fr.notedefrais.extraction.ReceiptExtractor;
@@ -38,6 +40,8 @@ class ExpenseServiceTest {
     static final ReceiptFields BISTROT = new ReceiptFields("Le Bistrot", Category.RESTAURANT,
             LocalDate.of(2026, 3, 10), new BigDecimal("42.50"), new BigDecimal("3.86"), "EUR",
             "Paris", "FR", "1 rue de Rivoli", "CB", "Déjeuner");
+    static final PlanLimits PREMIUM = new PlanLimits(1_000_000, true);
+    static final PlanLimits FREE = new PlanLimits(1_000_000, false);
 
     @Autowired
     ExpenseRepository repository;
@@ -48,6 +52,7 @@ class ExpenseServiceTest {
     FakeExtractor extractor;
     FakeImageProcessor imageProcessor;
     List<UUID> queued;
+    PlanLimits limits;
     ExpenseService service;
     ExpenseProcessor processor;
 
@@ -58,8 +63,9 @@ class ExpenseServiceTest {
         extractor = new FakeExtractor();
         imageProcessor = new FakeImageProcessor();
         queued = new ArrayList<>();
-        processor = new ExpenseProcessor(repository, storage, imageProcessor, extractor);
-        service = new ExpenseService(repository, storage, queued::add);
+        limits = PREMIUM;
+        processor = new ExpenseProcessor(repository, storage, imageProcessor, extractor, owner -> limits);
+        service = new ExpenseService(repository, storage, queued::add, owner -> limits);
     }
 
     @Test
@@ -273,8 +279,152 @@ class ExpenseServiceTest {
     }
 
     @Test
+    void la_taille_de_l_original_est_comptee_des_l_envoi() {
+        register();
+
+        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length);
+    }
+
+    @Test
+    void le_traitement_ajoute_la_taille_du_rendu() {
+        var id = register();
+
+        processor.process(id);
+
+        assertThat(repository.findById(id).orElseThrow().getSizeBytes()).isEqualTo(PHOTO.length + PROCESSED.length);
+        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length + PROCESSED.length);
+    }
+
+    @Test
+    void le_retraitement_remplace_la_taille_du_rendu_precedent() {
+        var id = register();
+        processor.process(id);
+        imageProcessor.output = new byte[]{1, 2, 3, 4, 5};
+
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
+        processor.process(id);
+
+        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length + 5);
+    }
+
+    @Test
+    void l_usage_d_un_compte_ne_compte_ni_ses_depenses_supprimees_ni_celles_des_autres() {
+        var deleted = register();
+        register();
+        service.register(STRANGER, UUID.randomUUID(), new byte[100], "image/jpeg", ImageFilter.ENHANCE, null);
+
+        service.delete(OWNER, deleted);
+
+        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length);
+    }
+
+    @Test
+    void un_compte_sans_depense_n_utilise_rien() {
+        assertThat(service.usedBytes(OWNER)).isZero();
+    }
+
+    @Test
+    void un_envoi_qui_depasserait_le_quota_est_refuse_sans_rien_stocker() {
+        limits = new PlanLimits(PHOTO.length + 2, false);
+        register();
+        var id = UUID.randomUUID();
+
+        var refused = catchThrowableOfType(QuotaExceededException.class,
+                () -> service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null));
+
+        assertThat(refused.usedBytes()).isEqualTo(PHOTO.length);
+        assertThat(refused.quotaBytes()).isEqualTo(PHOTO.length + 2);
+        assertThat(repository.findById(id)).isEmpty();
+        assertThat(storageDir.resolve(id.toString())).doesNotExist();
+        assertThat(queued).hasSize(1);
+    }
+
+    @Test
+    void un_envoi_qui_remplit_exactement_le_quota_est_accepte() {
+        limits = new PlanLimits(2L * PHOTO.length, false);
+        register();
+
+        var id = register();
+
+        assertThat(repository.findById(id)).isPresent();
+    }
+
+    @Test
+    void le_renvoi_d_une_depense_deja_enregistree_n_est_pas_refuse_pour_quota() {
+        limits = new PlanLimits(PHOTO.length, false);
+        var id = register();
+
+        Expense again = service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+
+        assertThat(again.getId()).isEqualTo(id);
+    }
+
+    @Test
+    void sans_analyse_ia_incluse_le_rendu_est_produit_sans_appeler_claude() {
+        limits = FREE;
+        var id = register();
+
+        processor.process(id);
+
+        Expense e = repository.findById(id).orElseThrow();
+        assertThat(extractor.receivedImages).isEmpty();
+        assertThat(e.getStatus()).isEqualTo(ProcessingStatus.NOT_INCLUDED);
+        assertThat(storage.read(id, e.getProcessedFile())).containsExactly(PROCESSED);
+        assertThat(e.getSizeBytes()).isEqualTo(PHOTO.length + PROCESSED.length);
+    }
+
+    @Test
+    void sans_analyse_ia_incluse_le_retraitement_garde_les_informations_deja_lues() {
+        var id = register();
+        processor.process(id);
+        limits = FREE;
+
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
+        processor.process(id);
+
+        Expense e = repository.findById(id).orElseThrow();
+        assertThat(extractor.receivedImages).hasSize(1);
+        assertThat(e.getStatus()).isEqualTo(ProcessingStatus.NOT_INCLUDED);
+        assertThat(e.getMerchant()).isEqualTo("Le Bistrot");
+        assertThat(e.getFilter()).isEqualTo(ImageFilter.SCAN_BW);
+    }
+
+    @Test
+    void une_depense_sans_proprietaire_n_est_pas_analysee() {
+        var id = UUID.randomUUID();
+        var orphan = new Expense(id);
+        orphan.setOriginalFile(storage.saveOriginal(id, PHOTO, "jpg"));
+        repository.save(orphan);
+
+        processor.process(id);
+
+        assertThat(extractor.receivedImages).isEmpty();
+        assertThat(repository.findById(id).orElseThrow().getStatus()).isEqualTo(ProcessingStatus.NOT_INCLUDED);
+    }
+
+    @Test
+    void au_demarrage_les_depenses_sans_taille_la_recoivent_depuis_leurs_fichiers() {
+        var processed = register();
+        processor.process(processed);
+        var pending = register();
+        forgetSize(processed);
+        forgetSize(pending);
+
+        service.backfillSizes();
+
+        assertThat(repository.findById(processed).orElseThrow().getSizeBytes()).isEqualTo(PHOTO.length + PROCESSED.length);
+        assertThat(repository.findById(pending).orElseThrow().getSizeBytes()).isEqualTo(PHOTO.length);
+    }
+
+    @Test
     void une_depense_inconnue_leve_une_erreur_explicite() {
         assertThatThrownBy(() -> service.get(OWNER, UUID.randomUUID())).isInstanceOf(ExpenseNotFoundException.class);
+    }
+
+    private void forgetSize(UUID id) {
+        Expense e = repository.findById(id).orElseThrow();
+        e.setSizeBytes(null);
+        repository.save(e);
     }
 
     private UUID register() {
@@ -300,6 +450,7 @@ class ExpenseServiceTest {
         final List<ImageFilter> filters = new ArrayList<>();
         final List<Quad> corners = new ArrayList<>();
         ImageProcessingException failure;
+        byte[] output = PROCESSED;
 
         @Override
         public ProcessedImage process(byte[] original, ImageFilter filter, Quad quad) {
@@ -307,7 +458,7 @@ class ExpenseServiceTest {
             filters.add(filter);
             corners.add(quad);
             if (failure != null) throw failure;
-            return new ProcessedImage(PROCESSED, true);
+            return new ProcessedImage(output, true);
         }
     }
 }

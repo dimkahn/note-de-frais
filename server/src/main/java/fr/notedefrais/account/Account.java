@@ -33,6 +33,10 @@ public class Account {
         createdAt = Instant.now();
     }
 
+    void changePlan(Plan newPlan) {
+        plan = newPlan;
+    }
+
     public UUID getId() { return id; }
     public String getEmail() { return email; }
     String getPasswordHash() { return passwordHash; }

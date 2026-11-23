@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import fr.notedefrais.account.*;
+import fr.notedefrais.expense.ExpenseService;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -30,6 +31,8 @@ class AuthControllerTest {
     MockMvc mvc;
     @MockitoBean
     AccountService service;
+    @MockitoBean
+    ExpenseService expenses;
 
     @Test
     void l_inscription_repond_201_avec_le_jeton_et_le_compte() throws Exception {
@@ -107,15 +110,20 @@ class AuthControllerTest {
     }
 
     @Test
-    void le_compte_connecte_est_decrit_par_son_e_mail_et_son_offre() throws Exception {
+    void le_compte_connecte_est_decrit_avec_son_offre_son_usage_son_quota_et_l_analyse_ia() throws Exception {
         var account = TestAccounts.free("alice@example.com");
         given(service.authenticate("jeton")).willReturn(Optional.of(account.getId()));
         given(service.get(account.getId())).willReturn(account);
+        given(service.limitsOf(account.getId())).willReturn(new PlanLimits(104_857_600L, false));
+        given(expenses.usedBytes(account.getId())).willReturn(44_040_192L);
 
         mvc.perform(get("/api/account").header("Authorization", "Bearer jeton"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("alice@example.com"))
-                .andExpect(jsonPath("$.plan").value("FREE"));
+                .andExpect(jsonPath("$.plan").value("FREE"))
+                .andExpect(jsonPath("$.usedBytes").value(44_040_192L))
+                .andExpect(jsonPath("$.quotaBytes").value(104_857_600L))
+                .andExpect(jsonPath("$.aiAnalysis").value(false));
     }
 
     @Test

@@ -51,6 +51,8 @@ public class Expense {
     private boolean cropped;
     /** Contour choisi sur l'appareil ({@link fr.notedefrais.imaging.Quad#format()}) ; null = détection auto. */
     private String corners;
+    /** Place occupée en ligne (original + rendu) ; null pour les dépenses antérieures aux quotas. */
+    private Long sizeBytes;
 
     // --- Traitement ---
     @Enumerated(EnumType.STRING)
@@ -102,9 +104,17 @@ public class Expense {
         processingError = null;
     }
 
-    public void attachProcessedImage(String fileName, boolean wasCropped) {
+    /** @param totalSizeBytes place occupée par l'original et ce rendu */
+    public void attachProcessedImage(String fileName, boolean wasCropped, long totalSizeBytes) {
         processedFile = fileName;
         cropped = wasCropped;
+        sizeBytes = totalSizeBytes;
+    }
+
+    /** Rendu produit sans analyse IA : les champs (lus sur l'appareil ou corrigés) restent tels quels. */
+    public void markAnalysisNotIncluded() {
+        status = ProcessingStatus.NOT_INCLUDED;
+        processingError = null;
     }
 
     public void markFailed(ProcessingStatus failure, String error) {
@@ -177,6 +187,8 @@ public class Expense {
     public String getCorners() { return corners; }
     public void setCorners(String corners) { this.corners = corners; }
     public void setCropped(boolean cropped) { this.cropped = cropped; }
+    public Long getSizeBytes() { return sizeBytes; }
+    public void setSizeBytes(Long sizeBytes) { this.sizeBytes = sizeBytes; }
     public ProcessingStatus getStatus() { return status; }
     public void setStatus(ProcessingStatus status) { this.status = status; }
     public String getProcessingError() { return processingError; }

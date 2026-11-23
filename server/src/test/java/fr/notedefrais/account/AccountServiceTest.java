@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,6 +25,8 @@ class AccountServiceTest {
     static final String PASSWORD = "correct horse battery";
     static final Instant NOW = Instant.parse("2026-11-23T10:00:00Z");
     static final Duration TTL = Duration.ofDays(30);
+    static final PlanLimits FREE_LIMITS = new PlanLimits(100L * 1024 * 1024, false);
+    static final PlanLimits PREMIUM_LIMITS = new PlanLimits(1024L * 1024 * 1024, true);
 
     @Autowired
     AccountRepository accounts;
@@ -245,7 +248,41 @@ class AccountServiceTest {
         assertThat(service.deviceLogin(deviceKey).account().getId()).isEqualTo(auth.account().getId());
     }
 
+    @Test
+    void les_limites_d_un_compte_sont_celles_de_son_offre() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+
+        PlanLimits limits = service.limitsOf(alice.getId());
+
+        assertThat(limits).isEqualTo(FREE_LIMITS);
+    }
+
+    @Test
+    void l_administration_fait_passer_un_compte_en_premium_par_son_e_mail() {
+        var alice = service.register("alice@example.com", PASSWORD).account();
+
+        Account changed = service.changePlan(" Alice@Example.com", Plan.PREMIUM);
+
+        assertThat(changed.getPlan()).isEqualTo(Plan.PREMIUM);
+        assertThat(service.limitsOf(alice.getId())).isEqualTo(PREMIUM_LIMITS);
+    }
+
+    @Test
+    void changer_l_offre_d_un_compte_inconnu_leve_une_erreur_explicite() {
+        assertThatThrownBy(() -> service.changePlan("inconnu@example.com", Plan.PREMIUM))
+                .isInstanceOf(AccountNotFoundException.class);
+    }
+
+    @Test
+    void chaque_offre_doit_avoir_ses_limites_configurees() {
+        assertThatThrownBy(() -> new AccountService(accounts, sessions, devices, encoder, Clock.systemUTC(), TTL,
+                Map.of(Plan.FREE, FREE_LIMITS)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("PREMIUM");
+    }
+
     private AccountService serviceAt(Instant now) {
-        return new AccountService(accounts, sessions, devices, encoder, Clock.fixed(now, ZoneOffset.UTC), TTL);
+        return new AccountService(accounts, sessions, devices, encoder, Clock.fixed(now, ZoneOffset.UTC), TTL,
+                Map.of(Plan.FREE, FREE_LIMITS, Plan.PREMIUM, PREMIUM_LIMITS));
     }
 }

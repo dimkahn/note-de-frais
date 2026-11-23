@@ -9,13 +9,14 @@ import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Comptes, sessions et clés d'appareil (branché dans {@code InfrastructureConfig}). */
-public class AccountService {
+public class AccountService implements AccountLimits {
 
     private static final int TOKEN_BYTES = 32; // 256 bits
     /** BCrypt ignore (et Spring refuse) tout ce qui dépasse 72 octets. */
@@ -27,18 +28,24 @@ public class AccountService {
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
     private final Duration sessionTtl;
+    private final Map<Plan, PlanLimits> plans;
     private final SecureRandom random = new SecureRandom();
     /** Comparé quand l'e-mail est inconnu : la réponse prend le même temps qu'un mauvais mot de passe. */
     private final String decoyHash;
 
     public AccountService(AccountRepository accounts, SessionRepository sessions, DeviceKeyRepository devices,
-                          PasswordEncoder passwordEncoder, Clock clock, Duration sessionTtl) {
+                          PasswordEncoder passwordEncoder, Clock clock, Duration sessionTtl,
+                          Map<Plan, PlanLimits> plans) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.devices = devices;
         this.passwordEncoder = passwordEncoder;
         this.clock = clock;
         this.sessionTtl = sessionTtl;
+        for (Plan plan : Plan.values()) {
+            if (!plans.containsKey(plan)) throw new IllegalArgumentException("Limites non configurées pour l'offre " + plan);
+        }
+        this.plans = Map.copyOf(plans);
         this.decoyHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
@@ -78,6 +85,20 @@ public class AccountService {
     @Transactional(readOnly = true)
     public Account get(UUID accountId) {
         return accounts.findById(accountId).orElseThrow(InvalidCredentialsException::new);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PlanLimits limitsOf(UUID accountId) {
+        return plans.get(get(accountId).getPlan());
+    }
+
+    /** Attribution manuelle d'une offre (administration). */
+    @Transactional
+    public Account changePlan(String email, Plan plan) {
+        Account account = accounts.findByEmail(normalize(email)).orElseThrow(() -> new AccountNotFoundException(email));
+        account.changePlan(plan);
+        return accounts.save(account);
     }
 
     /** Émet une clé d'appareil pour la connexion par empreinte ; rendue une seule fois, jamais stockée. */
