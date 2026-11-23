@@ -1,10 +1,9 @@
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
-
 import '../domain/expense.dart';
 import 'expense_api.dart';
 import 'file_store.dart';
+import 'image_types.dart';
 import 'local_store.dart';
 
 final class SyncReport {
@@ -92,7 +91,7 @@ final class SyncService {
         var remote = await _api.upload(
           local,
           await file.readAsBytes(),
-          _contentType(file.path),
+          contentTypeOfPath(file.path),
         );
         if (local.userEdited) remote = await _api.update(local);
         await _store.save(_merge(remote, local));
@@ -145,7 +144,7 @@ final class SyncService {
       final file = await _files.saveOriginalBytes(
         remote.id,
         original.bytes,
-        _extension(original.contentType),
+        extensionOfContentType(original.contentType),
       );
       merged = merged.copyWith(originalPath: file.path);
     }
@@ -174,20 +173,4 @@ final class SyncService {
         ? merged.withDeviceGuess(local.guess)
         : merged;
   }
-
-  static String _contentType(String path) =>
-      switch (p.extension(path).toLowerCase()) {
-        '.png' => 'image/png',
-        '.webp' => 'image/webp',
-        '.heic' => 'image/heic',
-        _ => 'image/jpeg',
-      };
-
-  static String _extension(String contentType) =>
-      switch (contentType.split(';').first.trim()) {
-        'image/png' => 'png',
-        'image/webp' => 'webp',
-        'image/heic' => 'heic',
-        _ => 'jpg',
-      };
 }
