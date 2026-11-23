@@ -1,0 +1,16 @@
+# Régénérer : dart run flutter_launcher_icons   (sources : assets/logo/*.svg → PNG via Inkscape)
+flutter_launcher_icons:
+  image_path: "assets/logo/icon.png"
+  android: true
+  adaptive_icon_background: "#1F6F5C"
+  adaptive_icon_foreground: "assets/logo/icon_foreground.png"
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: false
+  windows:
+    generate: true
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/logo/logo.png"
