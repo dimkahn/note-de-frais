@@ -75,13 +75,12 @@ abstract final class AppTheme {
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: scheme.surfaceContainer,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.primary, width: 2),
+        // Champ « filled » Material 3 : le libellé reste dans la zone grisée (une bordure
+        // « outline » invisible le faisait flotter à cheval sur le bord). Le trait du bas prend
+        // tout seul la couleur de l'état : encre au focus, rouge en erreur.
+        border: UnderlineInputBorder(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+          borderSide: BorderSide(color: scheme.outlineVariant),
         ),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(

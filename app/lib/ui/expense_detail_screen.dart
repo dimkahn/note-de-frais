@@ -242,6 +242,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
           children: [
             if (e.processingError != null && e.status != ProcessingStatus.done)
               Card.outlined(
+                margin: const EdgeInsets.only(bottom: 16),
                 child: ListTile(
                   leading: Icon(
                     Icons.info_outline,
@@ -253,6 +254,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
               ),
             if (e.prefilled && !e.userEdited)
               const Card.outlined(
+                margin: EdgeInsets.only(bottom: 16),
                 child: ListTile(
                   leading: Icon(Icons.document_scanner_outlined),
                   title: Text('Lu automatiquement sur l\'appareil'),
@@ -264,6 +266,7 @@ class _ExpenseFormState extends State<_ExpenseForm> {
               )
             else if (!widget.withServer && needsManualEntry(e))
               const Card.outlined(
+                margin: EdgeInsets.only(bottom: 16),
                 child: ListTile(
                   leading: Icon(Icons.edit_note),
                   title: Text('Analyse automatique indisponible'),

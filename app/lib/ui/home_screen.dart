@@ -40,7 +40,9 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: repo.sync,
         child: CustomScrollView(
           slivers: [
-            SliverAppBar.medium(
+            SliverAppBar(
+              pinned: true,
+              titleTextStyle: Theme.of(context).textTheme.headlineMedium,
               title: const Text('Dépenses'),
               actions: [
                 if (filtered.isNotEmpty)
