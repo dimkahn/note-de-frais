@@ -149,4 +149,69 @@ void main() {
       expect(api.account('perime'), throwsA(isA<UnauthorizedException>()));
     },
   );
+  test(
+    'la clé d\'appareil est demandée avec le jeton de session et un libellé',
+    () async {
+      late http.Request seen;
+      final api = _api((r) async {
+        seen = r;
+        return _json({'deviceKey': 'cle-appareil'}, 201);
+      });
+
+      final deviceKey = await api.registerDevice('jeton', 'android');
+
+      expect(seen.method, 'POST');
+      expect(seen.url.path, '/api/auth/devices');
+      expect(seen.headers['Authorization'], 'Bearer jeton');
+      expect(jsonDecode(seen.body), {'label': 'android'});
+      expect(deviceKey, 'cle-appareil');
+    },
+  );
+
+  test('la connexion par clé d\'appareil rend une nouvelle session', () async {
+    late http.Request seen;
+    final api = _api((r) async {
+      seen = r;
+      return _json({'token': 'jeton', 'account': _alice});
+    });
+
+    final session = await api.deviceLogin('cle-appareil');
+
+    expect(seen.method, 'POST');
+    expect(seen.url.path, '/api/auth/device-login');
+    expect(seen.headers['Authorization'], isNull);
+    expect(jsonDecode(seen.body), {'deviceKey': 'cle-appareil'});
+    expect(session.token, 'jeton');
+    expect(session.account.email, 'alice@example.com');
+  });
+
+  test(
+    'une clé d\'appareil refusée est signalée par une UnauthorizedException',
+    () async {
+      final api = _api((_) async => http.Response('', 401));
+
+      expect(
+        api.deviceLogin('revoquee'),
+        throwsA(isA<UnauthorizedException>()),
+      );
+    },
+  );
+
+  test(
+    'la révocation présente le jeton de session et la clé de l\'appareil',
+    () async {
+      late http.Request seen;
+      final api = _api((r) async {
+        seen = r;
+        return http.Response('', 204);
+      });
+
+      await api.revokeDevice('jeton', 'cle-appareil');
+
+      expect(seen.method, 'DELETE');
+      expect(seen.url.path, '/api/auth/devices/current');
+      expect(seen.headers['Authorization'], 'Bearer jeton');
+      expect(jsonDecode(seen.body), {'deviceKey': 'cle-appareil'});
+    },
+  );
 }

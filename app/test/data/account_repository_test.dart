@@ -6,6 +6,8 @@ import 'package:note_de_frais/domain/account.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
+import '../support/fake_biometric_auth.dart';
+import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 
 void main() {
@@ -13,11 +15,15 @@ void main() {
   const password = 'mot de passe long';
   late LocalStore store;
   late MemorySessionStore sessions;
+  late MemoryDeviceKeyStore deviceKeys;
+  late FakeBiometricAuth biometrics;
   late FakeServer server;
 
   AccountRepository newRepository() => AccountRepository(
     store: store,
     sessions: sessions,
+    deviceKeys: deviceKeys,
+    biometrics: biometrics,
     httpClient: server.client,
   );
 
@@ -27,6 +33,8 @@ void main() {
       factory: databaseFactoryFfi,
     );
     sessions = MemorySessionStore();
+    deviceKeys = MemoryDeviceKeyStore();
+    biometrics = FakeBiometricAuth();
     server = FakeServer();
   });
 
@@ -175,5 +183,154 @@ void main() {
 
     expect(repo.session!.account.plan, Plan.premium);
     expect(sessions.session!.account.plan, Plan.premium);
+  });
+  group('connexion par empreinte', () {
+    test('sans biométrie sur l\'appareil, elle n\'est pas proposée', () async {
+      biometrics.available = false;
+
+      final repo = await withServer();
+
+      expect(repo.biometricAvailable, isFalse);
+    });
+
+    test(
+      'avec une biométrie, elle est proposée mais pas encore activée',
+      () async {
+        final repo = await withServer();
+
+        expect(repo.biometricAvailable, isTrue);
+        expect(repo.biometricEnabled, isFalse);
+      },
+    );
+
+    test(
+      'l\'activer après connexion garde la clé émise par le serveur',
+      () async {
+        final repo = await withServer();
+        await repo.register('alice@example.com', password);
+
+        await repo.enableBiometricLogin();
+
+        expect(biometrics.prompts, 1);
+        expect(repo.biometricEnabled, isTrue);
+        expect(server.deviceKeys.keys, [deviceKeys.deviceKey]);
+      },
+    );
+
+    test(
+      'l\'activation est abandonnée si l\'empreinte n\'est pas reconnue',
+      () async {
+        final repo = await withServer();
+        await repo.register('alice@example.com', password);
+        biometrics.succeeds = false;
+
+        await repo.enableBiometricLogin();
+
+        expect(repo.biometricEnabled, isFalse);
+        expect(deviceKeys.deviceKey, isNull);
+        expect(server.deviceKeys, isEmpty);
+      },
+    );
+
+    test('une session expirée à l\'activation déconnecte', () async {
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      server.expireSessions();
+
+      await repo.enableBiometricLogin();
+
+      expect(repo.signedIn, isFalse);
+      expect(repo.biometricEnabled, isFalse);
+    });
+
+    test(
+      'la déconnexion conserve la clé, retrouvée au lancement suivant',
+      () async {
+        final repo = await withServer();
+        await repo.register('alice@example.com', password);
+        await repo.enableBiometricLogin();
+
+        await repo.logout();
+        final reopened = newRepository();
+        await reopened.load();
+
+        expect(reopened.signedIn, isFalse);
+        expect(reopened.biometricEnabled, isTrue);
+        expect(server.deviceKeys, isNotEmpty);
+      },
+    );
+
+    test('l\'empreinte reconnecte au compte sans mot de passe', () async {
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      await repo.enableBiometricLogin();
+      await repo.logout();
+
+      await repo.loginWithBiometrics();
+
+      expect(repo.connected, isTrue);
+      expect(repo.session!.account.email, 'alice@example.com');
+      expect(sessions.session?.token, repo.session!.token);
+    });
+
+    test(
+      'la clé n\'est pas lue sans authentification biométrique réussie',
+      () async {
+        deviceKeys.deviceKey = 'cle-appareil';
+        server.deviceKeys['cle-appareil'] = 'alice@example.com';
+        final repo = await withServer();
+        biometrics.succeeds = false;
+
+        await repo.loginWithBiometrics();
+
+        expect(deviceKeys.reads, 0);
+        expect(repo.signedIn, isFalse);
+        expect(server.requests, isEmpty);
+      },
+    );
+
+    test('une clé refusée par le serveur est effacée et un message invite au mot de passe', () async {
+      deviceKeys.deviceKey = 'revoquee';
+      final repo = await withServer();
+
+      await expectLater(
+        repo.loginWithBiometrics(),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            contains('mot de passe'),
+          ),
+        ),
+      );
+      expect(repo.signedIn, isFalse);
+      expect(repo.biometricEnabled, isFalse);
+      expect(deviceKeys.deviceKey, isNull);
+    });
+
+    test('la désactiver révoque la clé sur le serveur et l\'efface', () async {
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      await repo.enableBiometricLogin();
+
+      await repo.disableBiometricLogin();
+
+      expect(repo.biometricEnabled, isFalse);
+      expect(deviceKeys.deviceKey, isNull);
+      expect(server.deviceKeys, isEmpty);
+      expect(repo.signedIn, isTrue);
+    });
+
+    test('hors-ligne, la désactiver efface quand même la clé', () async {
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      await repo.enableBiometricLogin();
+      server.offline = true;
+
+      await repo.disableBiometricLogin();
+
+      expect(repo.biometricEnabled, isFalse);
+      expect(deviceKeys.deviceKey, isNull);
+    });
   });
 }

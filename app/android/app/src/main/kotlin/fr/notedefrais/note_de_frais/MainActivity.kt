@@ -1,5 +1,6 @@
 package fr.notedefrais.note_de_frais
 
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 
-class MainActivity : FlutterActivity()
+// FlutterFragmentActivity : requise par local_auth (invite biométrique du système).
+class MainActivity : FlutterFragmentActivity()

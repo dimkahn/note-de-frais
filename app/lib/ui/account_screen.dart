@@ -38,6 +38,7 @@ class AccountScreen extends StatelessWidget {
             ),
           ] else ...[
             _AccountSummary(account: session.account),
+            const _BiometricLoginSetting(),
             const _SyncStatus(),
           ],
           const SizedBox(height: 8),
@@ -82,98 +83,117 @@ class _SignInFormState extends State<_SignInForm> {
   }
 
   @override
-  Widget build(BuildContext context) => Form(
-    key: _form,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SegmentedButton<SignInMode>(
-          segments: const [
-            ButtonSegment(
-              value: SignInMode.signIn,
-              label: Text('Se connecter'),
-            ),
-            ButtonSegment(
-              value: SignInMode.register,
-              label: Text('Créer un compte'),
-            ),
-          ],
-          selected: {_mode},
-          onSelectionChanged: (s) => setState(() {
-            _mode = s.single;
-            _error = null;
-          }),
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _email,
-          keyboardType: TextInputType.emailAddress,
-          autofillHints: const [AutofillHints.email],
-          decoration: const InputDecoration(labelText: 'E-mail'),
-          validator: (v) =>
-              v != null && RegExp(r'^\S+@\S+\.\S+$').hasMatch(v.trim())
-              ? null
-              : 'Adresse e-mail invalide',
-        ),
-        const SizedBox(height: 12),
-        TextFormField(
-          controller: _password,
-          obscureText: _obscure,
-          autofillHints: [
-            _registering ? AutofillHints.newPassword : AutofillHints.password,
-          ],
-          decoration: InputDecoration(
-            labelText: 'Mot de passe',
-            helperText: _registering ? '10 caractères minimum' : null,
-            suffixIcon: IconButton(
-              tooltip: _obscure ? 'Afficher' : 'Masquer',
-              icon: Icon(
-                _obscure
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
+  Widget build(BuildContext context) {
+    final account = context.watch<AccountRepository>();
+    return Form(
+      key: _form,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SegmentedButton<SignInMode>(
+            segments: const [
+              ButtonSegment(
+                value: SignInMode.signIn,
+                label: Text('Se connecter'),
               ),
-              onPressed: () => setState(() => _obscure = !_obscure),
-            ),
+              ButtonSegment(
+                value: SignInMode.register,
+                label: Text('Créer un compte'),
+              ),
+            ],
+            selected: {_mode},
+            onSelectionChanged: (s) => setState(() {
+              _mode = s.single;
+              _error = null;
+            }),
           ),
-          validator: (v) {
-            if (v == null || v.isEmpty) return 'Mot de passe requis';
-            if (_registering && v.length < 10) return 'Au moins 10 caractères';
-            return null;
-          },
-        ),
-        if (_error != null) ...[
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.email],
+            decoration: const InputDecoration(labelText: 'E-mail'),
+            validator: (v) =>
+                v != null && RegExp(r'^\S+@\S+\.\S+$').hasMatch(v.trim())
+                ? null
+                : 'Adresse e-mail invalide',
+          ),
           const SizedBox(height: 12),
-          Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          TextFormField(
+            controller: _password,
+            obscureText: _obscure,
+            autofillHints: [
+              _registering ? AutofillHints.newPassword : AutofillHints.password,
+            ],
+            decoration: InputDecoration(
+              labelText: 'Mot de passe',
+              helperText: _registering ? '10 caractères minimum' : null,
+              suffixIcon: IconButton(
+                tooltip: _obscure ? 'Afficher' : 'Masquer',
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            validator: (v) {
+              if (v == null || v.isEmpty) return 'Mot de passe requis';
+              if (_registering && v.length < 10) {
+                return 'Au moins 10 caractères';
+              }
+              return null;
+            },
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: _busy ? null : _submit,
+            child: _busy
+                ? const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(_registering ? 'Créer mon compte' : 'Se connecter'),
+          ),
+          if (account.biometricAvailable && account.biometricEnabled) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.fingerprint),
+              label: const Text('Se connecter avec l\'empreinte'),
+              onPressed: _busy ? null : () => _run(account.loginWithBiometrics),
+            ),
+          ],
         ],
-        const SizedBox(height: 16),
-        FilledButton(
-          onPressed: _busy ? null : _submit,
-          child: _busy
-              ? const SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(_registering ? 'Créer mon compte' : 'Se connecter'),
-        ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
     final account = context.read<AccountRepository>();
+    await _run(
+      () => _registering
+          ? account.register(_email.text, _password.text)
+          : account.login(_email.text, _password.text),
+    );
+  }
+
+  Future<void> _run(Future<void> Function() authenticate) async {
     setState(() {
       _busy = true;
       _error = null;
     });
     String? error;
     try {
-      _registering
-          ? await account.register(_email.text, _password.text)
-          : await account.login(_email.text, _password.text);
+      await authenticate();
     } on AuthException catch (e) {
       error = e.message;
     } on OfflineException {
@@ -288,6 +308,46 @@ class _AccountSummary extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// Connexion par empreinte, proposée seulement si l'appareil a une biométrie.
+class _BiometricLoginSetting extends StatelessWidget {
+  const _BiometricLoginSetting();
+
+  @override
+  Widget build(BuildContext context) {
+    final account = context.watch<AccountRepository>();
+    if (!account.biometricAvailable) return const SizedBox.shrink();
+    if (account.biometricEnabled) {
+      return TextButton.icon(
+        icon: const Icon(Icons.fingerprint),
+        label: const Text('Désactiver l\'empreinte'),
+        onPressed: account.disableBiometricLogin,
+      );
+    }
+    return OutlinedButton.icon(
+      icon: const Icon(Icons.fingerprint),
+      label: const Text('Activer la connexion par empreinte'),
+      onPressed: () => _enable(context, account),
+    );
+  }
+
+  Future<void> _enable(BuildContext context, AccountRepository account) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await account.enableBiometricLogin();
+    } on OfflineException {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Serveur injoignable : empreinte non activée.'),
+        ),
+      );
+    } on ApiException catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Erreur du serveur (${e.statusCode}).')),
+      );
+    }
+  }
 }
 
 class _SyncStatus extends StatelessWidget {

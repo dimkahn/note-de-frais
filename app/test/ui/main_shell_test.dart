@@ -14,6 +14,8 @@ import 'package:note_de_frais/data/local_store.dart';
 import 'package:note_de_frais/ui/main_shell.dart';
 import 'package:provider/provider.dart';
 
+import '../support/fake_biometric_auth.dart';
+import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 import '../support/temp_downloads.dart';
 
@@ -45,6 +47,8 @@ void main() {
       account = AccountRepository(
         store: store,
         sessions: MemorySessionStore(),
+        deviceKeys: MemoryDeviceKeyStore(),
+        biometrics: FakeBiometricAuth(available: false),
         httpClient: client,
       );
       await account.load();

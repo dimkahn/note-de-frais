@@ -16,6 +16,8 @@ import 'package:note_de_frais/ui/home_screen.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
 
+import '../support/fake_biometric_auth.dart';
+import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 import '../support/temp_downloads.dart';
 
@@ -65,6 +67,8 @@ void main() {
         account: AccountRepository(
           store: store,
           sessions: MemorySessionStore(),
+          deviceKeys: MemoryDeviceKeyStore(),
+          biometrics: FakeBiometricAuth(available: false),
           httpClient: client,
         ),
         pollInterval: null,

@@ -12,6 +12,8 @@ import 'package:note_de_frais/domain/receipt_text_reader.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
+import '../support/fake_biometric_auth.dart';
+import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 
 void main() {
@@ -40,6 +42,8 @@ void main() {
     account = AccountRepository(
       store: store,
       sessions: sessions,
+      deviceKeys: MemoryDeviceKeyStore(),
+      biometrics: FakeBiometricAuth(available: false),
       httpClient: server.client,
     );
     await account.load();

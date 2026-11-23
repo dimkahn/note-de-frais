@@ -1,8 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../domain/account.dart';
 import 'auth_api.dart';
+import 'biometric_auth.dart';
+import 'device_key_store.dart';
 import 'expense_api.dart';
 import 'local_store.dart';
 import 'session_store.dart';
@@ -13,6 +17,8 @@ class AccountRepository extends ChangeNotifier {
   AccountRepository({
     required this._store,
     required this._sessions,
+    required this._deviceKeys,
+    required this._biometrics,
     required http.Client httpClient,
   }) {
     _api = AuthApi(client: httpClient, settings: () => _settings);
@@ -20,10 +26,14 @@ class AccountRepository extends ChangeNotifier {
 
   final LocalStore _store;
   final SessionStore _sessions;
+  final DeviceKeyStore _deviceKeys;
+  final BiometricAuth _biometrics;
   late final AuthApi _api;
 
   ServerSettings _settings = const ServerSettings(baseUrl: '');
   Session? _session;
+  var _biometricAvailable = false;
+  var _biometricEnabled = false;
 
   ServerSettings get settings => _settings;
 
@@ -31,12 +41,20 @@ class AccountRepository extends ChangeNotifier {
 
   bool get signedIn => _session != null;
 
+  /// L'appareil a une biométrie utilisable : la connexion par empreinte peut être proposée.
+  bool get biometricAvailable => _biometricAvailable;
+
+  /// Une clé d'appareil est enregistrée : la connexion par empreinte est activée.
+  bool get biometricEnabled => _biometricEnabled;
+
   /// Synchronisation possible : un serveur et une session.
   bool get connected => _settings.isConfigured && signedIn;
 
   Future<void> load() async {
     _settings = ServerSettings(baseUrl: await _store.setting('baseUrl') ?? '');
     _session = await _sessions.read();
+    _biometricAvailable = await _biometrics.isAvailable();
+    _biometricEnabled = await _deviceKeys.exists();
     notifyListeners();
   }
 
@@ -65,6 +83,62 @@ class AccountRepository extends ChangeNotifier {
       // Hors-ligne ou serveur en erreur : la session expirera d'elle-même côté serveur.
       debugPrint('Révocation de la session impossible : $e');
     }
+  }
+
+  /// Après une authentification biométrique, demande une clé d'appareil au serveur et la garde
+  /// dans le stockage sécurisé.
+  Future<void> enableBiometricLogin() async {
+    final token = _session?.token;
+    if (token == null) return;
+    if (!await _biometrics.authenticate('Activer la connexion par empreinte')) {
+      return;
+    }
+    try {
+      await _deviceKeys.write(
+        await _api.registerDevice(token, Platform.operatingSystem),
+      );
+    } on UnauthorizedException {
+      return expire();
+    }
+    _biometricEnabled = true;
+    notifyListeners();
+  }
+
+  /// Se connecte avec la clé d'appareil, lue seulement après une authentification biométrique
+  /// réussie. Clé refusée par le serveur → effacée, [AuthException].
+  Future<void> loginWithBiometrics() async {
+    if (!await _biometrics.authenticate('Se connecter à votre compte')) return;
+    final deviceKey = await _deviceKeys.read();
+    if (deviceKey == null) return _forgetDeviceKey();
+    try {
+      await _open(() => _api.deviceLogin(deviceKey));
+    } on UnauthorizedException {
+      await _forgetDeviceKey();
+      throw AuthException(
+        'La connexion par empreinte n\'est plus valide : '
+        'connectez-vous avec votre mot de passe.',
+      );
+    }
+  }
+
+  /// Efface la clé d'appareil, puis la révoque sur le serveur si possible.
+  Future<void> disableBiometricLogin() async {
+    final deviceKey = await _deviceKeys.read();
+    await _forgetDeviceKey();
+    final token = _session?.token;
+    if (deviceKey == null || token == null || !_settings.isConfigured) return;
+    try {
+      await _api.revokeDevice(token, deviceKey);
+    } on Exception catch (e) {
+      // Hors-ligne ou session expirée : la clé n'existe plus sur l'appareil.
+      debugPrint('Révocation de la clé d\'appareil impossible : $e');
+    }
+  }
+
+  Future<void> _forgetDeviceKey() async {
+    await _deviceKeys.clear();
+    _biometricEnabled = false;
+    notifyListeners();
   }
 
   /// Relit le compte sur le serveur (offre à jour) ; une session refusée déconnecte.

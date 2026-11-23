@@ -24,6 +24,9 @@ class FakeServer {
   final accounts = <String, String>{};
   final sessions = <String>{'jeton'};
   final premium = <String>{};
+
+  /// Clés d'appareil valides (clé → e-mail du compte).
+  final deviceKeys = <String, String>{};
   var _issued = 0;
 
   /// Révoque toutes les sessions (expiration côté serveur).
@@ -36,6 +39,7 @@ class FakeServer {
     if (path == '/api/auth/register' || path == '/api/auth/login') {
       return _authenticate(request);
     }
+    if (path == '/api/auth/device-login') return _deviceLogin(request);
     final token = request.headers['Authorization']?.replaceFirst('Bearer ', '');
     if (!sessions.contains(token)) return http.Response('', 401);
     if (path == '/api/auth/logout') {
@@ -43,6 +47,15 @@ class FakeServer {
       return http.Response('', 204);
     }
     if (path == '/api/account') return _ok(_account(_emailOf(token!)));
+    if (path == '/api/auth/devices') {
+      final deviceKey = 'cle-${++_issued}';
+      deviceKeys[deviceKey] = _emailOf(token!);
+      return _ok({'deviceKey': deviceKey}, 201);
+    }
+    if (path == '/api/auth/devices/current') {
+      deviceKeys.remove(_body(request)['deviceKey']);
+      return http.Response('', 204);
+    }
 
     final id = path.split('/').length > 3 ? path.split('/')[3] : null;
 
@@ -77,7 +90,7 @@ class FakeServer {
   final _owners = <String, String>{};
 
   http.Response _authenticate(http.Request request) {
-    final body = jsonDecode(request.body) as Map<String, Object?>;
+    final body = _body(request);
     final email = body['email']! as String;
     final password = body['password']! as String;
     if (request.url.path.endsWith('/register')) {
@@ -86,11 +99,24 @@ class FakeServer {
     } else if (accounts[email] != password) {
       return http.Response('', 401);
     }
+    return _openSession(email);
+  }
+
+  http.Response _deviceLogin(http.Request request) {
+    final email = deviceKeys[_body(request)['deviceKey']];
+    if (email == null) return http.Response('', 401);
+    return _openSession(email);
+  }
+
+  http.Response _openSession(String email) {
     final token = 'jeton-${++_issued}';
     sessions.add(token);
     _owners[token] = email;
     return _ok({'token': token, 'account': _account(email)});
   }
+
+  static Map<String, Object?> _body(http.Request request) =>
+      jsonDecode(request.body) as Map<String, Object?>;
 
   String _emailOf(String token) => _owners[token] ?? 'alice@example.com';
 

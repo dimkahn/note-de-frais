@@ -16,7 +16,7 @@ class AuthException implements Exception {
   String toString() => message;
 }
 
-/// Client de l'API `/api/auth` et `/api/account`.
+/// Client de l'API `/api/auth` (dont les clés d'appareil) et `/api/account`.
 final class AuthApi {
   AuthApi({required this._client, required this._settings});
 
@@ -45,6 +45,44 @@ final class AuthApi {
     return Account.fromJson(_json(_check(response)));
   }
 
+  /// Clé d'appareil pour la connexion par empreinte, émise pour le compte connecté.
+  Future<String> registerDevice(String token, String label) async {
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/auth/devices'),
+        headers: {..._bearer(token), ..._jsonContent},
+        body: jsonEncode({'label': label}),
+      ),
+    );
+    if (response.statusCode == 401) throw UnauthorizedException();
+    return _json(_check(response))['deviceKey']! as String;
+  }
+
+  /// Nouvelle session à partir d'une clé d'appareil ; clé refusée → [UnauthorizedException].
+  Future<Session> deviceLogin(String deviceKey) async {
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/auth/device-login'),
+        headers: _jsonContent,
+        body: jsonEncode({'deviceKey': deviceKey}),
+      ),
+    );
+    if (response.statusCode == 401) throw UnauthorizedException();
+    return _session(_check(response));
+  }
+
+  /// Révoque la clé d'appareil sur le serveur.
+  Future<void> revokeDevice(String token, String deviceKey) async {
+    final response = await _send(
+      () => _client.delete(
+        _uri('/api/auth/devices/current'),
+        headers: {..._bearer(token), ..._jsonContent},
+        body: jsonEncode({'deviceKey': deviceKey}),
+      ),
+    );
+    _check(response);
+  }
+
   Future<Session> _authenticate(
     String path,
     String email,
@@ -53,7 +91,7 @@ final class AuthApi {
     final response = await _send(
       () => _client.post(
         _uri(path),
-        headers: {'Content-Type': 'application/json'},
+        headers: _jsonContent,
         body: jsonEncode({'email': email, 'password': password}),
       ),
     );
@@ -66,7 +104,11 @@ final class AuthApi {
       _ => null,
     };
     if (message != null) throw AuthException(message);
-    final json = _json(_check(response));
+    return _session(_check(response));
+  }
+
+  static Session _session(http.Response response) {
+    final json = _json(response);
     return Session(
       token: json['token']! as String,
       account: Account.fromJson(json['account']! as Map<String, Object?>),
@@ -94,6 +136,8 @@ final class AuthApi {
 
   static Map<String, Object?> _json(http.Response r) =>
       jsonDecode(utf8.decode(r.bodyBytes)) as Map<String, Object?>;
+
+  static const _jsonContent = {'Content-Type': 'application/json'};
 
   static Map<String, String> _bearer(String token) => {
     'Authorization': 'Bearer $token',

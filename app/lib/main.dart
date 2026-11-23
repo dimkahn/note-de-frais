@@ -11,6 +11,8 @@ import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'data/account_repository.dart';
+import 'data/biometric_auth.dart';
+import 'data/device_key_store.dart';
 import 'data/document_repository.dart';
 import 'data/expense_repository.dart';
 import 'data/export_service.dart';
@@ -55,6 +57,8 @@ Future<AppServices> _start() async {
   final account = AccountRepository(
     store: store,
     sessions: SecureSessionStore(),
+    deviceKeys: SecureDeviceKeyStore(),
+    biometrics: LocalBiometricAuth(),
     httpClient: httpClient,
   );
   await account.load();

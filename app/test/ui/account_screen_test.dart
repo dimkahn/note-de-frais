@@ -11,6 +11,8 @@ import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
+import '../support/fake_biometric_auth.dart';
+import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 import '../support/settle.dart';
 
@@ -21,12 +23,18 @@ void main() {
   late FakeServer server;
   late AccountRepository account;
   late ExpenseRepository expenses;
+  late MemoryDeviceKeyStore deviceKeys;
+  late FakeBiometricAuth biometrics;
 
   Future<void> pumpAccount(
     WidgetTester tester, {
     String serverUrl = 'http://serveur',
+    bool biometricAvailable = true,
+    String? deviceKey,
   }) async {
     server = FakeServer();
+    deviceKeys = MemoryDeviceKeyStore(deviceKey);
+    biometrics = FakeBiometricAuth(available: biometricAvailable);
     await tester.runAsync(() async {
       store = await LocalStore.open(
         inMemoryDatabasePath,
@@ -35,6 +43,8 @@ void main() {
       account = AccountRepository(
         store: store,
         sessions: MemorySessionStore(),
+        deviceKeys: deviceKeys,
+        biometrics: biometrics,
         httpClient: server.client,
       );
       await account.load();
@@ -212,5 +222,92 @@ void main() {
     await settleRealAsync(tester);
 
     expect(account.settings.baseUrl, 'http://192.168.1.10:8080');
+  });
+  group('connexion par empreinte', () {
+    Future<void> signIn(WidgetTester tester) async {
+      server.accounts['alice@example.com'] = password;
+      await submit(
+        tester,
+        mode: 'Se connecter',
+        button: 'Se connecter',
+        email: 'alice@example.com',
+        password: password,
+      );
+    }
+
+    Future<void> tapButton(WidgetTester tester, String label) async {
+      await tester.ensureVisible(find.text(label));
+      await tester.tap(find.text(label));
+      await settleRealAsync(tester);
+    }
+
+    testWidgets('sans biométrie sur l\'appareil, elle n\'est pas proposée', (
+      tester,
+    ) async {
+      await pumpAccount(tester, biometricAvailable: false);
+
+      await signIn(tester);
+
+      expect(find.text('Activer la connexion par empreinte'), findsNothing);
+    });
+
+    testWidgets(
+      'sans biométrie, une clé enregistrée ne propose pas de bouton empreinte',
+      (tester) async {
+        await pumpAccount(
+          tester,
+          biometricAvailable: false,
+          deviceKey: 'cle-appareil',
+        );
+
+        expect(find.text('Se connecter avec l\'empreinte'), findsNothing);
+      },
+    );
+
+    testWidgets('connecté, on l\'active puis on la désactive', (tester) async {
+      await pumpAccount(tester);
+      await signIn(tester);
+
+      await tapButton(tester, 'Activer la connexion par empreinte');
+
+      expect(deviceKeys.deviceKey, isNotNull);
+      expect(find.text('Activer la connexion par empreinte'), findsNothing);
+
+      await tapButton(tester, 'Désactiver l\'empreinte');
+
+      expect(deviceKeys.deviceKey, isNull);
+      expect(server.deviceKeys, isEmpty);
+      expect(find.text('Activer la connexion par empreinte'), findsOneWidget);
+    });
+
+    testWidgets(
+      'déconnecté avec une clé, l\'empreinte connecte et le mot de passe reste possible',
+      (tester) async {
+        await pumpAccount(tester, deviceKey: 'cle-appareil');
+        server.deviceKeys['cle-appareil'] = 'alice@example.com';
+
+        expect(
+          find.widgetWithText(FilledButton, 'Se connecter'),
+          findsOneWidget,
+        );
+        await tapButton(tester, 'Se connecter avec l\'empreinte');
+
+        expect(account.signedIn, isTrue);
+        expect(find.text('alice@example.com'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'une clé refusée affiche un message et retire le bouton empreinte',
+      (tester) async {
+        await pumpAccount(tester, deviceKey: 'revoquee');
+
+        await tapButton(tester, 'Se connecter avec l\'empreinte');
+
+        expect(account.signedIn, isFalse);
+        expect(find.textContaining('n\'est plus valide'), findsOneWidget);
+        expect(find.text('Se connecter avec l\'empreinte'), findsNothing);
+      },
+    );
   });
 }

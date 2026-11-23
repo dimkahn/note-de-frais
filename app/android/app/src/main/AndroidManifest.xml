@@ -1,5 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Connexion par empreinte (local_auth). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
     <!-- Export dans Téléchargements : inutile à partir d'Android 10 (fichiers créés par l'app). -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <application
