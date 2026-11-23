@@ -269,7 +269,7 @@ final class DocumentScanner {
           (contours.toList()..sort(
                 (a, b) => cv.contourArea(b).compareTo(cv.contourArea(a)),
               ))
-              .take(5)
+              .take(_maxCandidates)
               .toList();
       for (final tolerance in _approxTolerances) {
         for (final contour in candidates) {
