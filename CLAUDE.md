@@ -16,6 +16,9 @@ Application de notes de frais :
 - Serveur, lancement : `cd server && ANTHROPIC_API_KEY=... mvn spring-boot:run`
 - App, tests : `cd app && flutter test`
 - App, analyse : `cd app && flutter analyze`
+- App contre le serveur local (téléphone en USB) : `adb reverse tcp:8080 tcp:8080 && cd app && flutter run`
+  (debug/profile → `http://localhost:8080`, release → `https://api.notedefrais.fr` ; adresses dans
+  `app/lib/data/server_config.dart`, surchargeables par `--dart-define=API_URL=...` ou Compte › Avancé)
 
 ## Façon de travailler
 - TDD obligatoire pour tout comportement : voir `.claude/rules/tdd.md` et le skill `/tdd`.

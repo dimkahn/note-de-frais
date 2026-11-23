@@ -88,8 +88,13 @@ l'app garde les valeurs lues sur l'appareil.
 - À chaque connexion, la date de dernière synchro est remise à zéro (récupère tout le compte,
   même après un changement de compte sur l'appareil).
 - Mot de passe : 10 caractères minimum, 72 octets maximum (limite BCrypt) → 400 au-delà.
-- Restent ouverts : rattachement des dépenses d'avant les comptes (sans propriétaire, invisibles) ;
-  pas d'adresse de serveur par défaut dans l'app (à saisir dans « Avancé »).
+- Restent ouverts : rattachement des dépenses d'avant les comptes (sans propriétaire, invisibles).
+- Adresse du serveur par type de build (résolu après la phase 1b) : debug/profile →
+  `http://localhost:8080` (téléphone relié au PC par `adb reverse tcp:8080 tcp:8080`), release →
+  `https://api.notedefrais.fr` (provisoire). Constantes dans `app/lib/data/server_config.dart`,
+  surchargeables au build par `--dart-define=API_URL=...` ; le champ de « Avancé » reste une
+  surcharge facultative (vide = adresse du build, l'adresse effective est affichée). Android : http
+  en clair autorisé seulement en debug et seulement vers localhost (`src/debug`, network security config).
 
 ## Décisions prises en phase 1b (connexion par empreinte)
 

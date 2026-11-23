@@ -19,12 +19,15 @@ void main() {
   late FakeBiometricAuth biometrics;
   late FakeServer server;
 
-  AccountRepository newRepository() => AccountRepository(
+  AccountRepository newRepository({
+    String defaultServerAddress = 'http://defaut:8080',
+  }) => AccountRepository(
     store: store,
     sessions: sessions,
     deviceKeys: deviceKeys,
     biometrics: biometrics,
     httpClient: server.client,
+    defaultServerAddress: defaultServerAddress,
   );
 
   setUp(() async {
@@ -69,6 +72,30 @@ void main() {
   });
 
   test(
+    'sans adresse enregistrée, l\'adresse par défaut du build est utilisée',
+    () async {
+      final repo = newRepository();
+
+      await repo.load();
+
+      expect(repo.serverAddressOverride, isEmpty);
+      expect(repo.settings.baseUrl, 'http://defaut:8080');
+    },
+  );
+
+  test(
+    'effacer l\'adresse enregistrée revient à l\'adresse par défaut du build',
+    () async {
+      final repo = await withServer();
+
+      await repo.saveServerAddress('  ');
+
+      expect(repo.serverAddressOverride, isEmpty);
+      expect(repo.settings.baseUrl, 'http://defaut:8080');
+    },
+  );
+
+  test(
     'créer un compte connecte et garde la session dans le stockage sécurisé',
     () async {
       final repo = await withServer();
@@ -106,9 +133,9 @@ void main() {
   );
 
   test(
-    'se connecter sans adresse de serveur est refusé avec un message',
+    'se connecter sans aucune adresse de serveur est refusé avec un message',
     () async {
-      final repo = newRepository();
+      final repo = newRepository(defaultServerAddress: '');
       await repo.load();
 
       await expectLater(

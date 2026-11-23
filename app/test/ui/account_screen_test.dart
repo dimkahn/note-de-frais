@@ -29,6 +29,7 @@ void main() {
   Future<void> pumpAccount(
     WidgetTester tester, {
     String serverUrl = 'http://serveur',
+    String defaultServerAddress = 'http://defaut:8080',
     bool biometricAvailable = true,
     String? deviceKey,
   }) async {
@@ -46,6 +47,7 @@ void main() {
         deviceKeys: deviceKeys,
         biometrics: biometrics,
         httpClient: server.client,
+        defaultServerAddress: defaultServerAddress,
       );
       await account.load();
       await account.saveServerAddress(serverUrl);
@@ -222,7 +224,35 @@ void main() {
     await settleRealAsync(tester);
 
     expect(account.settings.baseUrl, 'http://192.168.1.10:8080');
+    expect(
+      find.text('Adresse utilisée : http://192.168.1.10:8080'),
+      findsOneWidget,
+    );
   });
+
+  testWidgets(
+    'sans adresse saisie, le champ est vide et l\'adresse par défaut est indiquée',
+    (tester) async {
+      await pumpAccount(tester, serverUrl: '');
+
+      await tester.scrollUntilVisible(
+        find.text('Avancé'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Avancé'));
+      await tester.pumpAndSettle();
+
+      final field = tester.widget<TextField>(
+        find.widgetWithText(TextField, 'Adresse du serveur'),
+      );
+      expect(field.controller!.text, isEmpty);
+      expect(
+        find.text('Adresse utilisée : http://defaut:8080'),
+        findsOneWidget,
+      );
+    },
+  );
   group('connexion par empreinte', () {
     Future<void> signIn(WidgetTester tester) async {
       server.accounts['alice@example.com'] = password;

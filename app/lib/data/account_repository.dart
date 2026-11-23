@@ -9,6 +9,7 @@ import 'biometric_auth.dart';
 import 'device_key_store.dart';
 import 'expense_api.dart';
 import 'local_store.dart';
+import 'server_config.dart';
 import 'session_store.dart';
 
 /// Connexion au serveur : son adresse et la session du compte. Sans session, l'app reste
@@ -20,8 +21,9 @@ class AccountRepository extends ChangeNotifier {
     required this._deviceKeys,
     required this._biometrics,
     required http.Client httpClient,
-  }) {
-    _api = AuthApi(client: httpClient, settings: () => _settings);
+    String? defaultServerAddress,
+  }) : _defaultServerAddress = defaultServerAddress ?? defaultServerUrl {
+    _api = AuthApi(client: httpClient, settings: () => settings);
   }
 
   final LocalStore _store;
@@ -30,12 +32,22 @@ class AccountRepository extends ChangeNotifier {
   final BiometricAuth _biometrics;
   late final AuthApi _api;
 
-  ServerSettings _settings = const ServerSettings(baseUrl: '');
+  /// Adresse du build, utilisée quand aucune n'est saisie.
+  final String _defaultServerAddress;
+  var _serverAddressOverride = '';
   Session? _session;
   var _biometricAvailable = false;
   var _biometricEnabled = false;
 
-  ServerSettings get settings => _settings;
+  /// Adresse effective : celle saisie dans l'app, sinon celle du build.
+  ServerSettings get settings => ServerSettings(
+    baseUrl: _serverAddressOverride.isEmpty
+        ? _defaultServerAddress
+        : _serverAddressOverride,
+  );
+
+  /// Adresse saisie dans l'app (vide : celle du build).
+  String get serverAddressOverride => _serverAddressOverride;
 
   Session? get session => _session;
 
@@ -48,10 +60,10 @@ class AccountRepository extends ChangeNotifier {
   bool get biometricEnabled => _biometricEnabled;
 
   /// Synchronisation possible : un serveur et une session.
-  bool get connected => _settings.isConfigured && signedIn;
+  bool get connected => settings.isConfigured && signedIn;
 
   Future<void> load() async {
-    _settings = ServerSettings(baseUrl: await _store.setting('baseUrl') ?? '');
+    _serverAddressOverride = await _store.setting('baseUrl') ?? '';
     _session = await _sessions.read();
     _biometricAvailable = await _biometrics.isAvailable();
     _biometricEnabled = await _deviceKeys.exists();
@@ -61,7 +73,7 @@ class AccountRepository extends ChangeNotifier {
   Future<void> saveServerAddress(String baseUrl) async {
     final trimmed = baseUrl.trim();
     await _store.setSetting('baseUrl', trimmed);
-    _settings = ServerSettings(baseUrl: trimmed);
+    _serverAddressOverride = trimmed;
     notifyListeners();
   }
 
@@ -76,7 +88,7 @@ class AccountRepository extends ChangeNotifier {
   Future<void> logout() async {
     final token = _session?.token;
     await expire();
-    if (token == null || !_settings.isConfigured) return;
+    if (token == null || !settings.isConfigured) return;
     try {
       await _api.logout(token);
     } on Exception catch (e) {
@@ -126,7 +138,7 @@ class AccountRepository extends ChangeNotifier {
     final deviceKey = await _deviceKeys.read();
     await _forgetDeviceKey();
     final token = _session?.token;
-    if (deviceKey == null || token == null || !_settings.isConfigured) return;
+    if (deviceKey == null || token == null || !settings.isConfigured) return;
     try {
       await _api.revokeDevice(token, deviceKey);
     } on Exception catch (e) {
@@ -144,7 +156,7 @@ class AccountRepository extends ChangeNotifier {
   /// Relit le compte sur le serveur (offre à jour) ; une session refusée déconnecte.
   Future<void> refresh() async {
     final current = _session;
-    if (current == null || !_settings.isConfigured) return;
+    if (current == null || !settings.isConfigured) return;
     try {
       final account = await _api.account(current.token);
       await _keep(current.copyWith(account: account));
@@ -163,7 +175,7 @@ class AccountRepository extends ChangeNotifier {
   }
 
   Future<void> _open(Future<Session> Function() authenticate) async {
-    if (!_settings.isConfigured) {
+    if (!settings.isConfigured) {
       throw AuthException(
         'Renseignez d\'abord l\'adresse du serveur (section « Avancé »).',
       );

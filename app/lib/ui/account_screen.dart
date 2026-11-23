@@ -386,7 +386,7 @@ class _AdvancedSection extends StatefulWidget {
 
 class _AdvancedSectionState extends State<_AdvancedSection> {
   late final _url = TextEditingController(
-    text: context.read<AccountRepository>().settings.baseUrl,
+    text: context.read<AccountRepository>().serverAddressOverride,
   );
 
   @override
@@ -404,9 +404,12 @@ class _AdvancedSectionState extends State<_AdvancedSection> {
       TextField(
         controller: _url,
         keyboardType: TextInputType.url,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           labelText: 'Adresse du serveur',
-          hintText: 'http://192.168.1.10:8080',
+          hintText: 'Vide : adresse par défaut',
+          helperText:
+              'Adresse utilisée : '
+              '${context.watch<AccountRepository>().settings.baseUrl}',
         ),
       ),
       const SizedBox(height: 12),
