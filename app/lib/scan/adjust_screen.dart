@@ -59,7 +59,19 @@ class AdjustScreen extends StatefulWidget {
 }
 
 class _AdjustScreenState extends State<AdjustScreen> {
-  static const _scanner = DocumentScanner();
+  // Calculs envoyés à un isolate : construits dans des méthodes statiques pour que la fermeture ne
+  // capture que ses paramètres, jamais l'état de l'écran (non transmissible entre isolates).
+  static Quad? Function() _detectJob(Uint8List bytes) =>
+      () => const DocumentScanner().detect(bytes);
+
+  static Uint8List Function() _renderJob(
+    Uint8List bytes,
+    Quad quad,
+    ImageFilter filter, {
+    int maxSide = 2400,
+  }) =>
+      () =>
+          const DocumentScanner().render(bytes, quad, filter, maxSide: maxSide);
 
   Uint8List? _bytes;
   double _aspectRatio = 3 / 4;
@@ -80,8 +92,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
     final bytes = await File(widget.photoPath).readAsBytes();
     final image = await _decode(bytes);
     final detected =
-        widget.initialQuad ??
-        await widget.compute(() => _scanner.detect(bytes));
+        widget.initialQuad ?? await widget.compute(_detectJob(bytes));
     if (!mounted) return;
     setState(() {
       _bytes = bytes;
@@ -101,7 +112,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
     if (bytes == null || quad == null) return;
     final generation = ++_previewGeneration;
     final jpeg = await widget.compute(
-      () => _scanner.render(bytes, quad, filter, maxSide: 1200),
+      _renderJob(bytes, quad, filter, maxSide: 1200),
     );
     if (mounted && generation == _previewGeneration) {
       setState(() => _previewJpeg = jpeg);
@@ -112,9 +123,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
     final bytes = _bytes, quad = _quad, filter = _filter;
     if (bytes == null || quad == null) return;
     setState(() => _busy = true);
-    final jpeg = await widget.compute(
-      () => _scanner.render(bytes, quad, filter),
-    );
+    final jpeg = await widget.compute(_renderJob(bytes, quad, filter));
     if (!mounted) return;
     Navigator.pop(
       context,

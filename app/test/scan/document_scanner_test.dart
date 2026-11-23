@@ -70,6 +70,28 @@ void main() {
       expect(scanner.detect(uniform(800, 600)), isNull);
     });
 
+    test(
+      'détecte en arrière-plan sur la luminance réduite du flux caméra',
+      () async {
+        final m = cv.imdecode(
+          photoOfReceipt(1000, 1400, receiptCorners),
+          cv.IMREAD_GRAYSCALE,
+        );
+        final (small, w, h) = downsampleLuma(
+          Uint8List.fromList(m.data),
+          width: m.cols,
+          height: m.rows,
+          bytesPerRow: m.cols,
+          maxSide: DocumentScanner.liveMaxSide,
+        );
+
+        final quad = await detectInBackground(small, width: w, height: h);
+
+        expect(quad, isNotNull);
+        expect(quad!.topLeft.x, closeTo(0.24, 0.03));
+      },
+    );
+
     test('détecte aussi sur une image de luminance brute (flux caméra)', () {
       final m = cv.imdecode(
         photoOfReceipt(1000, 1400, receiptCorners),

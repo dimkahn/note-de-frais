@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:isolate';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -23,8 +22,6 @@ class CameraScreen extends StatefulWidget {
 
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver {
-  static const _scanner = DocumentScanner();
-
   CameraController? _controller;
   String? _error;
   Quad? _liveQuad;
@@ -112,14 +109,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     final (small, width, height) = sample;
     final rotation = _controller?.description.sensorOrientation ?? 90;
-    Isolate.run(
-          () => _scanner.detectInLuma(
-            small,
-            width: width,
-            height: height,
-            bytesPerRow: width,
-          ),
-        )
+    detectInBackground(small, width: width, height: height)
         .then(
           (quad) => _onDetected(quad?.rotated(rotation)),
           onError: _onDetectionError,

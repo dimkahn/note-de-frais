@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -241,6 +242,25 @@ final class DocumentScanner {
     return m;
   }
 }
+
+/// Détection dans un isolate, sur une luminance déjà réduite (sans pas de ligne).
+///
+/// Fonction de premier niveau à dessein : la fermeture envoyée à l'isolate ne peut capturer que
+/// ses paramètres. Créée dans une méthode de l'écran caméra, elle emportait l'état de l'écran et le
+/// `CameraController`, que `Isolate.run` refuse d'envoyer (« object is unsendable ») : la détection
+/// en direct échouait à chaque image.
+Future<Quad?> detectInBackground(
+  Uint8List luma, {
+  required int width,
+  required int height,
+}) => Isolate.run(
+  () => const DocumentScanner().detectInLuma(
+    luma,
+    width: width,
+    height: height,
+    bytesPerRow: width,
+  ),
+);
 
 /// Réduit un plan de luminance (avec pas de ligne éventuel) à [maxSide] pixels au plus, par
 /// échantillonnage : rapide et suffisant pour la détection en direct.
