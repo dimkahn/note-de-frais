@@ -335,6 +335,67 @@ void main() {
       expect(deviceKeys.deviceKey, isNull);
     });
 
+    test('l\'activer retient le compte auquel la clé est liée', () async {
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+
+      await repo.enableBiometricLogin();
+
+      expect(deviceKeys.deviceOwner, 'alice@example.com');
+    });
+
+    test('se connecter par mot de passe à un autre compte efface la clé de l\'ancien et repropose l\'empreinte', () async {
+      server.accounts['bob@example.com'] = password;
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      await repo.enableBiometricLogin();
+      await repo.logout();
+
+      await repo.login('bob@example.com', password);
+
+      expect(deviceKeys.deviceKey, isNull);
+      expect(repo.biometricEnabled, isFalse);
+      expect(repo.biometricAvailable, isTrue);
+    });
+
+    test('créer un autre compte efface aussi la clé de l\'ancien', () async {
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      await repo.enableBiometricLogin();
+      await repo.logout();
+
+      await repo.register('bob@example.com', password);
+
+      expect(deviceKeys.deviceKey, isNull);
+      expect(repo.biometricEnabled, isFalse);
+    });
+
+    test(
+      'se reconnecter par mot de passe au même compte conserve la clé',
+      () async {
+        final repo = await withServer();
+        await repo.register('alice@example.com', password);
+        await repo.enableBiometricLogin();
+        await repo.logout();
+
+        await repo.login('alice@example.com', password);
+
+        expect(deviceKeys.deviceKey, isNotNull);
+        expect(repo.biometricEnabled, isTrue);
+      },
+    );
+
+    test('une clé dont le compte est inconnu est effacée à la connexion par mot de passe', () async {
+      deviceKeys.deviceKey = 'cle-sans-compte';
+      server.accounts['alice@example.com'] = password;
+      final repo = await withServer();
+
+      await repo.login('alice@example.com', password);
+
+      expect(deviceKeys.deviceKey, isNull);
+      expect(repo.biometricEnabled, isFalse);
+    });
+
     test('la désactiver révoque la clé sur le serveur et l\'efface', () async {
       final repo = await withServer();
       await repo.register('alice@example.com', password);

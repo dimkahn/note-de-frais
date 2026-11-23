@@ -15,7 +15,10 @@ void main() {
   });
 
   test('une clé enregistrée existe et est relue telle quelle', () async {
-    await SecureDeviceKeyStore().write('cle-appareil');
+    await SecureDeviceKeyStore().write(
+      'cle-appareil',
+      owner: 'alice@example.com',
+    );
 
     final store = SecureDeviceKeyStore();
 
@@ -25,11 +28,23 @@ void main() {
 
   test('l\'effacement supprime la clé', () async {
     final store = SecureDeviceKeyStore();
-    await store.write('cle-appareil');
+    await store.write('cle-appareil', owner: 'alice@example.com');
 
     await store.clear();
 
     expect(await store.exists(), isFalse);
     expect(await store.read(), isNull);
+    expect(await store.owner(), isNull);
+  });
+
+  test('le compte de la clé est relu', () async {
+    await SecureDeviceKeyStore().write(
+      'cle-appareil',
+      owner: 'alice@example.com',
+    );
+
+    final store = SecureDeviceKeyStore();
+
+    expect(await store.owner(), 'alice@example.com');
   });
 }

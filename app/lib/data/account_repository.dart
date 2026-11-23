@@ -77,11 +77,15 @@ class AccountRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> register(String email, String password) =>
-      _open(() => _api.register(email.trim(), password));
+  Future<void> register(String email, String password) async {
+    await _open(() => _api.register(email.trim(), password));
+    await _forgetDeviceKeyOfAnotherAccount();
+  }
 
-  Future<void> login(String email, String password) =>
-      _open(() => _api.login(email.trim(), password));
+  Future<void> login(String email, String password) async {
+    await _open(() => _api.login(email.trim(), password));
+    await _forgetDeviceKeyOfAnotherAccount();
+  }
 
   /// Efface la session de l'appareil, puis la révoque sur le serveur si possible.
   /// Les données locales sont conservées.
@@ -100,14 +104,15 @@ class AccountRepository extends ChangeNotifier {
   /// Après une authentification biométrique, demande une clé d'appareil au serveur et la garde
   /// dans le stockage sécurisé.
   Future<void> enableBiometricLogin() async {
-    final token = _session?.token;
-    if (token == null) return;
+    final session = _session;
+    if (session == null) return;
     if (!await _biometrics.authenticate('Activer la connexion par empreinte')) {
       return;
     }
     try {
       await _deviceKeys.write(
-        await _api.registerDevice(token, Platform.operatingSystem),
+        await _api.registerDevice(session.token, Platform.operatingSystem),
+        owner: session.account.email,
       );
     } on UnauthorizedException {
       return expire();
@@ -145,6 +150,15 @@ class AccountRepository extends ChangeNotifier {
       // Hors-ligne ou session expirée : la clé n'existe plus sur l'appareil.
       debugPrint('Révocation de la clé d\'appareil impossible : $e');
     }
+  }
+
+  /// La clé d'appareil reste liée au compte qui l'a activée : connecté à un autre compte
+  /// (ou à un compte inconnu de la clé), elle est effacée sans être révoquée — seule une session
+  /// de son compte le pourrait.
+  Future<void> _forgetDeviceKeyOfAnotherAccount() async {
+    if (!_biometricEnabled) return;
+    if (await _deviceKeys.owner() == _session?.account.email) return;
+    await _forgetDeviceKey();
   }
 
   Future<void> _forgetDeviceKey() async {

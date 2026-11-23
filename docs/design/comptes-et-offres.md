@@ -108,10 +108,13 @@ l'app garde les valeurs lues sur l'appareil.
 - « Biométrie disponible » = capteur présent **et** au moins une biométrie enregistrée, évalué au
   lancement de l'app ; sinon (desktop, émulateur, rien d'enregistré) l'option n'est pas proposée.
 - iOS : `NSFaceIDUsageDescription` ajouté (Face ID compte comme biométrie).
-- Restent ouverts : la clé reste liée au compte qui l'a activée (après une connexion par mot de passe
-  à un autre compte, l'empreinte reconnecte toujours au premier ; « Désactiver » l'efface sans pouvoir
-  la révoquer) ; une clé non révoquée (désactivation hors-ligne) reste valide sur le serveur — une
-  liste des appareils avec révocation dans la page Compte réglerait les deux.
+- Changement de compte (résolu) : la clé est enregistrée avec l'e-mail du compte qui l'a activée.
+  Une connexion par mot de passe (ou une inscription) à un **autre** compte efface la clé de
+  l'appareil, sans la révoquer (seule une session de son compte le pourrait), et l'option
+  « Activer la connexion par empreinte » est reproposée pour le nouveau compte. Une clé enregistrée
+  avant ce correctif (compte inconnu) est effacée de même à la connexion par mot de passe.
+- Reste ouvert : une clé non révoquée (désactivation hors-ligne, changement de compte) reste valide
+  sur le serveur — une liste des appareils avec révocation dans la page Compte le réglerait.
 
 ## Plan de tests (ordre)
 
