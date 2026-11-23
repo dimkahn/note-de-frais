@@ -25,7 +25,7 @@ class DocumentsScreen extends StatelessWidget {
       ),
       body: CustomScrollView(
         slivers: [
-          const SliverAppBar.large(title: Text('Documents')),
+          const SliverAppBar.medium(title: Text('Documents')),
           if (documents.isEmpty)
             const SliverFillRemaining(
               hasScrollBody: false,
