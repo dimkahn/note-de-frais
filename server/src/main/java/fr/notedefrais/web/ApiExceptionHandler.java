@@ -10,7 +10,7 @@ import fr.notedefrais.account.InvalidGoogleTokenException;
 import fr.notedefrais.account.InvalidPasswordException;
 import fr.notedefrais.account.PasswordNotSetException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
-import fr.notedefrais.expense.QuotaExceededException;
+import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.imaging.InvalidQuadException;
 import fr.notedefrais.storage.OriginalAlreadyExistsException;
 import fr.notedefrais.storage.StorageException;

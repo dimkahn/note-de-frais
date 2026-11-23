@@ -1,6 +1,7 @@
 package fr.notedefrais.expense;
 
-import fr.notedefrais.account.AccountLimits;
+import fr.notedefrais.account.Quota;
+import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
 import fr.notedefrais.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
@@ -25,14 +26,14 @@ public class ExpenseService {
     private final ExpenseRepository repository;
     private final FileStorage storage;
     private final ProcessingQueue queue;
-    private final AccountLimits limits;
+    private final Quota quota;
 
     public ExpenseService(ExpenseRepository repository, FileStorage storage, ProcessingQueue queue,
-                          AccountLimits limits) {
+                          Quota quota) {
         this.repository = repository;
         this.storage = storage;
         this.queue = queue;
-        this.limits = limits;
+        this.quota = quota;
     }
 
     /**
@@ -49,9 +50,7 @@ public class ExpenseService {
             return existing.get();
         }
 
-        long used = usedBytes(ownerId);
-        long quota = limits.limitsOf(ownerId).quotaBytes();
-        if (used + original.length > quota) throw new QuotaExceededException(used, quota);
+        quota.ensureRoomFor(ownerId, original.length);
 
         var expense = new Expense(id, ownerId);
         expense.setOriginalFile(storage.saveOriginal(id, original, extensionOf(contentType)));
@@ -84,10 +83,6 @@ public class ExpenseService {
                 log.warn("Taille non calculable pour la dépense {}", expense.getId(), e);
             }
         }
-    }
-
-    public long usedBytes(UUID ownerId) {
-        return repository.usedBytes(ownerId);
     }
 
     public Expense get(UUID ownerId, UUID id) {

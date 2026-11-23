@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import fr.notedefrais.account.PlanLimits;
+import fr.notedefrais.account.Quota;
+import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.extraction.ExtractionException;
 import fr.notedefrais.extraction.ReceiptExtraction;
 import fr.notedefrais.extraction.ReceiptExtractor;
@@ -53,6 +55,7 @@ class ExpenseServiceTest {
     FakeImageProcessor imageProcessor;
     List<UUID> queued;
     PlanLimits limits;
+    Quota quota;
     ExpenseService service;
     ExpenseProcessor processor;
 
@@ -65,7 +68,8 @@ class ExpenseServiceTest {
         queued = new ArrayList<>();
         limits = PREMIUM;
         processor = new ExpenseProcessor(repository, storage, imageProcessor, extractor, owner -> limits);
-        service = new ExpenseService(repository, storage, queued::add, owner -> limits);
+        quota = new Quota(List.of(repository), owner -> limits);
+        service = new ExpenseService(repository, storage, queued::add, quota);
     }
 
     @Test
@@ -282,7 +286,7 @@ class ExpenseServiceTest {
     void la_taille_de_l_original_est_comptee_des_l_envoi() {
         register();
 
-        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length);
+        assertThat(quota.usedBytes(OWNER)).isEqualTo(PHOTO.length);
     }
 
     @Test
@@ -292,7 +296,7 @@ class ExpenseServiceTest {
         processor.process(id);
 
         assertThat(repository.findById(id).orElseThrow().getSizeBytes()).isEqualTo(PHOTO.length + PROCESSED.length);
-        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length + PROCESSED.length);
+        assertThat(quota.usedBytes(OWNER)).isEqualTo(PHOTO.length + PROCESSED.length);
     }
 
     @Test
@@ -304,7 +308,7 @@ class ExpenseServiceTest {
         service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
         processor.process(id);
 
-        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length + 5);
+        assertThat(quota.usedBytes(OWNER)).isEqualTo(PHOTO.length + 5);
     }
 
     @Test
@@ -315,12 +319,12 @@ class ExpenseServiceTest {
 
         service.delete(OWNER, deleted);
 
-        assertThat(service.usedBytes(OWNER)).isEqualTo(PHOTO.length);
+        assertThat(quota.usedBytes(OWNER)).isEqualTo(PHOTO.length);
     }
 
     @Test
     void un_compte_sans_depense_n_utilise_rien() {
-        assertThat(service.usedBytes(OWNER)).isZero();
+        assertThat(quota.usedBytes(OWNER)).isZero();
     }
 
     @Test

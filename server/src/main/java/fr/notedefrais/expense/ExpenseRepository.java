@@ -1,5 +1,6 @@
 package fr.notedefrais.expense;
 
+import fr.notedefrais.account.StorageUsage;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -9,7 +10,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.transaction.annotation.Transactional;
 
-public interface ExpenseRepository extends JpaRepository<Expense, UUID>, JpaSpecificationExecutor<Expense> {
+public interface ExpenseRepository extends JpaRepository<Expense, UUID>, JpaSpecificationExecutor<Expense>, StorageUsage {
 
     List<Expense> findByOwnerIdAndUpdatedAtAfterOrderByUpdatedAtAsc(UUID ownerId, Instant since);
 
@@ -24,6 +25,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, UUID>, JpaSpec
     int recordMissingSize(UUID id, long sizeBytes);
 
     /** Place occupée par les dépenses non supprimées du compte (les supprimées ne comptent plus). */
+    @Override
     @Query("select coalesce(sum(e.sizeBytes), 0) from Expense e where e.ownerId = :ownerId and e.deleted = false")
     long usedBytes(UUID ownerId);
 }

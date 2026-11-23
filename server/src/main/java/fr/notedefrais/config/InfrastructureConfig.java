@@ -7,6 +7,8 @@ import fr.notedefrais.account.AccountRepository;
 import fr.notedefrais.account.AccountService;
 import fr.notedefrais.account.DeviceKeyRepository;
 import fr.notedefrais.account.GoogleIdentityVerifier;
+import fr.notedefrais.account.Quota;
+import fr.notedefrais.account.StorageUsage;
 import fr.notedefrais.account.SessionRepository;
 import fr.notedefrais.extraction.ClaudeReceiptExtractor;
 import fr.notedefrais.google.DisabledGoogleIdentityVerifier;
@@ -19,6 +21,7 @@ import fr.notedefrais.storage.FileStorage;
 import fr.notedefrais.storage.LocalFileStorage;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -38,6 +41,12 @@ public class InfrastructureConfig {
                                   AppProperties props) {
         return new AccountService(accounts, sessions, devices, new BCryptPasswordEncoder(), Clock.systemUTC(),
                 props.sessionTtl(), props.planLimits());
+    }
+
+    /** Toutes les données stockées en ligne (dépenses, documents) comptent dans l'espace de l'offre. */
+    @Bean
+    Quota quota(List<StorageUsage> usages, AccountService accounts) {
+        return new Quota(usages, accounts);
     }
 
     @Bean

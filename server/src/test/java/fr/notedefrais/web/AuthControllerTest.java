@@ -11,7 +11,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import fr.notedefrais.account.*;
-import fr.notedefrais.expense.ExpenseService;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -32,7 +31,7 @@ class AuthControllerTest {
     @MockitoBean
     AccountService service;
     @MockitoBean
-    ExpenseService expenses;
+    Quota quota;
     @MockitoBean
     GoogleIdentityVerifier google;
 
@@ -117,7 +116,7 @@ class AuthControllerTest {
         given(service.authenticate("jeton")).willReturn(Optional.of(account.getId()));
         given(service.get(account.getId())).willReturn(account);
         given(service.limitsOf(account.getId())).willReturn(new PlanLimits(104_857_600L, false));
-        given(expenses.usedBytes(account.getId())).willReturn(44_040_192L);
+        given(quota.usedBytes(account.getId())).willReturn(44_040_192L);
 
         mvc.perform(get("/api/account").header("Authorization", "Bearer jeton"))
                 .andExpect(status().isOk())

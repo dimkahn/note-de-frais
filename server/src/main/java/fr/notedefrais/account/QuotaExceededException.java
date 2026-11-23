@@ -1,4 +1,4 @@
-package fr.notedefrais.expense;
+package fr.notedefrais.account;
 
 /** L'envoi ferait dépasser l'espace en ligne de l'offre du compte ; rien n'a été stocké. */
 public class QuotaExceededException extends RuntimeException {

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import fr.notedefrais.account.AccountService;
+import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.*;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
 import fr.notedefrais.imaging.Quad;
