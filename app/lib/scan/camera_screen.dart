@@ -214,7 +214,8 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    final color = Theme.of(context).colorScheme.primaryContainer;
+    // Vert vif : bien visible sur l'aperçu caméra, quel que soit le fond.
+    const color = Colors.greenAccent;
     // En multi-pages, revenir en arrière garde les pages déjà validées.
     return PopScope(
       canPop: _pages.isEmpty,
