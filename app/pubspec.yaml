@@ -73,6 +73,8 @@ flutter:
     # Police des PDF exportés (accents, €, tirets) — Noto Sans, licence SIL OFL 1.1.
     - assets/fonts/NotoSans-Regular.ttf
     - assets/fonts/NotoSans-Bold.ttf
+    # Ticket du logo, sur fond transparent : page de chargement.
+    - assets/logo/icon_foreground.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
