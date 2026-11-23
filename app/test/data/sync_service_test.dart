@@ -31,8 +31,8 @@ void main() {
     server = FakeServer();
     final api = ExpenseApi(
       client: server.client,
-      settings: () =>
-          const ServerSettings(baseUrl: 'http://serveur', token: 'secret'),
+      settings: () => const ServerSettings(baseUrl: 'http://serveur'),
+      token: () => 'jeton',
     );
     sync = SyncService(store: store, api: api, files: files);
   });
@@ -54,7 +54,7 @@ void main() {
     return e;
   }
 
-  test('envoie les nouvelles captures avec leur identifiant, leur filtre et le jeton', () async {
+  test('envoie les nouvelles captures avec leur identifiant, leur filtre et le jeton de session', () async {
     await captured('a');
 
     await sync.sync();
@@ -63,7 +63,7 @@ void main() {
     final body = utf8.decode(upload.bodyBytes, allowMalformed: true);
     expect(body, contains('name="id"\r\n\r\na'));
     expect(body, contains('SCAN_BW'));
-    expect(upload.headers['X-Api-Token'], 'secret');
+    expect(upload.headers['Authorization'], 'Bearer jeton');
     expect((await store.get('a'))!.syncState, SyncState.synced);
   });
 
@@ -98,6 +98,19 @@ void main() {
     await sync.sync();
     expect((await store.get('a'))!.syncState, SyncState.synced);
   });
+
+  test(
+    'une session refusée interrompt la synchro sans rien perdre localement',
+    () async {
+      await captured('a');
+      server.expireSessions();
+
+      final report = await sync.sync();
+
+      expect(report.unauthorized, isTrue);
+      expect((await store.get('a'))!.syncState, SyncState.pendingUpload);
+    },
+  );
 
   test('pousse les corrections manuelles', () async {
     await captured('a');

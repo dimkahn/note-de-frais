@@ -122,6 +122,10 @@ final class LocalStore {
     'value': at.toUtc().toIso8601String(),
   }, conflictAlgorithm: ConflictAlgorithm.replace);
 
+  /// La prochaine synchronisation récupérera tout (changement de compte).
+  Future<void> clearLastSync() =>
+      _db.delete('meta', where: 'key = ?', whereArgs: ['last_sync']);
+
   Future<String?> setting(String key) async {
     final rows = await _db.query(
       'meta',

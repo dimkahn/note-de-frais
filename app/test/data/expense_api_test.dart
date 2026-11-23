@@ -8,14 +8,16 @@ import 'package:note_de_frais/data/expense_api.dart';
 ExpenseApi _api(
   MockClientHandler handler, {
   String baseUrl = 'http://serveur:8080/',
+  String? token,
 }) => ExpenseApi(
   client: MockClient(handler),
   settings: () => ServerSettings(baseUrl: baseUrl),
+  token: () => token,
 );
 
 void main() {
   test(
-    'construit les URL sans double barre et sans jeton quand il est vide',
+    'construit les URL sans double barre et sans jeton hors session',
     () async {
       late http.Request seen;
       final api = _api((r) async {
@@ -29,9 +31,27 @@ void main() {
         seen.url.toString(),
         'http://serveur:8080/api/expenses/changes?since=2026-03-10T00%3A00%3A00.000Z',
       );
-      expect(seen.headers.containsKey('X-Api-Token'), isFalse);
+      expect(seen.headers.containsKey('Authorization'), isFalse);
     },
   );
+
+  test('présente le jeton de session en Authorization Bearer', () async {
+    late http.Request seen;
+    final api = _api((r) async {
+      seen = r;
+      return http.Response('[]', 200);
+    }, token: 'jeton');
+
+    await api.changesSince(null);
+
+    expect(seen.headers['Authorization'], 'Bearer jeton');
+  });
+
+  test('une session refusée devient une UnauthorizedException', () async {
+    final api = _api((_) async => http.Response('', 401), token: 'perime');
+
+    expect(api.changesSince(null), throwsA(isA<UnauthorizedException>()));
+  });
 
   test('une erreur HTTP devient une ApiException avec le code', () async {
     final api = _api((_) async => http.Response('boom', 500));

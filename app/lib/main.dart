@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart' as sqflite;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'data/account_repository.dart';
 import 'data/document_repository.dart';
 import 'data/expense_repository.dart';
 import 'data/export_service.dart';
@@ -17,6 +18,7 @@ import 'data/platform_downloads_folder.dart';
 import 'data/system_file_sharer.dart';
 import 'data/file_store.dart';
 import 'data/local_store.dart';
+import 'data/session_store.dart';
 import 'scan/mlkit_receipt_text_reader.dart';
 import 'ui/launch_screen.dart';
 import 'ui/main_shell.dart';
@@ -30,6 +32,7 @@ void main() {
 
 /// Ce dont l'interface a besoin, prêt à l'emploi.
 typedef AppServices = ({
+  AccountRepository account,
   ExpenseRepository expenses,
   DocumentRepository documents,
   ExportService export,
@@ -48,10 +51,18 @@ Future<AppServices> _start() async {
     factory: factory,
   );
   final files = FileStore(Directory(p.join(dir.path, 'justificatifs')));
+  final httpClient = http.Client();
+  final account = AccountRepository(
+    store: store,
+    sessions: SecureSessionStore(),
+    httpClient: httpClient,
+  );
+  await account.load();
   final repo = ExpenseRepository(
     store: store,
     files: files,
-    httpClient: http.Client(),
+    httpClient: httpClient,
+    account: account,
     // ML Kit n'existe que sur mobile ; sur desktop, la saisie reste manuelle.
     textReader: mobile ? const MlKitReceiptTextReader() : null,
   );
@@ -66,8 +77,15 @@ Future<AppServices> _start() async {
     tempDir: await getTemporaryDirectory(),
     downloads: const PlatformDownloadsFolder(),
   );
-  repo.sync(); // en arrière-plan : l'app est utilisable immédiatement, même hors-ligne
-  return (expenses: repo, documents: documents, export: export);
+  // En arrière-plan : l'app est utilisable immédiatement, même hors-ligne ou sans compte.
+  account.refresh();
+  repo.sync();
+  return (
+    account: account,
+    expenses: repo,
+    documents: documents,
+    export: export,
+  );
 }
 
 class NoteDeFraisApp extends StatelessWidget {
@@ -90,6 +108,7 @@ class NoteDeFraisApp extends StatelessWidget {
         load: services,
         builder: (s) => MultiProvider(
           providers: [
+            ChangeNotifierProvider.value(value: s.account),
             ChangeNotifierProvider.value(value: s.expenses),
             ChangeNotifierProvider.value(value: s.documents),
             Provider.value(value: s.export),

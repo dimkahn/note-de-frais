@@ -20,10 +20,30 @@ class FakeServer {
   final expenses = <String, Map<String, Object?>>{};
   bool offline = false;
 
+  /// Comptes connus (e-mail → mot de passe) et jetons de session valides.
+  final accounts = <String, String>{};
+  final sessions = <String>{'jeton'};
+  final premium = <String>{};
+  var _issued = 0;
+
+  /// Révoque toutes les sessions (expiration côté serveur).
+  void expireSessions() => sessions.clear();
+
   late final client = MockClient((request) async {
     if (offline) throw const SocketException('hors ligne');
     requests.add(request);
     final path = request.url.path;
+    if (path == '/api/auth/register' || path == '/api/auth/login') {
+      return _authenticate(request);
+    }
+    final token = request.headers['Authorization']?.replaceFirst('Bearer ', '');
+    if (!sessions.contains(token)) return http.Response('', 401);
+    if (path == '/api/auth/logout') {
+      sessions.remove(token);
+      return http.Response('', 204);
+    }
+    if (path == '/api/account') return _ok(_account(_emailOf(token!)));
+
     final id = path.split('/').length > 3 ? path.split('/')[3] : null;
 
     if (request.method == 'POST' && path == '/api/expenses') {
@@ -53,6 +73,31 @@ class FakeServer {
     if (path.endsWith('/original')) return http.Response.bytes([1, 1], 200);
     return http.Response('introuvable', 404);
   });
+
+  final _owners = <String, String>{};
+
+  http.Response _authenticate(http.Request request) {
+    final body = jsonDecode(request.body) as Map<String, Object?>;
+    final email = body['email']! as String;
+    final password = body['password']! as String;
+    if (request.url.path.endsWith('/register')) {
+      if (accounts.containsKey(email)) return http.Response('', 409);
+      accounts[email] = password;
+    } else if (accounts[email] != password) {
+      return http.Response('', 401);
+    }
+    final token = 'jeton-${++_issued}';
+    sessions.add(token);
+    _owners[token] = email;
+    return _ok({'token': token, 'account': _account(email)});
+  }
+
+  String _emailOf(String token) => _owners[token] ?? 'alice@example.com';
+
+  Map<String, Object?> _account(String email) => {
+    'email': email,
+    'plan': premium.contains(email) ? 'PREMIUM' : 'FREE',
+  };
 
   static Map<String, Object?> _json(
     String id, {

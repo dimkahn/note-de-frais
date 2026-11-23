@@ -7,10 +7,9 @@ import '../domain/expense.dart';
 import '../domain/quad.dart';
 
 final class ServerSettings {
-  const ServerSettings({required this.baseUrl, this.token = ''});
+  const ServerSettings({required this.baseUrl});
 
   final String baseUrl;
-  final String token;
 
   bool get isConfigured => baseUrl.trim().isNotEmpty;
 }
@@ -37,10 +36,17 @@ class ApiException implements Exception {
 
 /// Client de l'API REST `/api/expenses`.
 final class ExpenseApi {
-  ExpenseApi({required this._client, required this._settings});
+  ExpenseApi({
+    required this._client,
+    required this._settings,
+    required this._token,
+  });
 
   final http.Client _client;
   final ServerSettings Function() _settings;
+
+  /// Jeton de la session en cours (`null` : pas de session).
+  final String? Function() _token;
 
   Future<Expense> upload(
     Expense e,
@@ -152,6 +158,7 @@ final class ExpenseApi {
     } on HttpException catch (e) {
       throw OfflineException(e);
     }
+    if (response.statusCode == 401) throw UnauthorizedException();
     if (response.statusCode == 404 && acceptNotFound) return response;
     if (response.statusCode >= 300) {
       throw ApiException(response.statusCode, response.body);
@@ -162,8 +169,8 @@ final class ExpenseApi {
   Object? _json(http.Response r) => jsonDecode(utf8.decode(r.bodyBytes));
 
   Map<String, String> _headers() {
-    final token = _settings().token;
-    return token.isEmpty ? {} : {'X-Api-Token': token};
+    final token = _token();
+    return token == null ? {} : {'Authorization': 'Bearer $token'};
   }
 
   Uri _uri(String path, [Map<String, String>? query]) {
@@ -178,4 +185,10 @@ final class ExpenseApi {
       parts.length > 1 ? parts[1] : 'octet-stream',
     );
   }
+}
+
+/// La session est absente, expirée ou révoquée : l'utilisateur doit se reconnecter.
+class UnauthorizedException implements Exception {
+  @override
+  String toString() => 'Session expirée';
 }

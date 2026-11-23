@@ -13,6 +13,7 @@ final class SyncReport {
     this.pulled = 0,
     this.errors = const [],
     this.offline = false,
+    this.unauthorized = false,
   });
 
   final int pushed;
@@ -21,6 +22,9 @@ final class SyncReport {
 
   /// Le serveur était injoignable : rien n'est perdu, tout sera rejoué.
   final bool offline;
+
+  /// La session a été refusée : il faut se reconnecter ; les changements locaux attendent.
+  final bool unauthorized;
 }
 
 /// Synchronisation rejouable : on pousse d'abord les changements locaux (la base locale fait foi
@@ -54,6 +58,13 @@ final class SyncService {
         pulled: pulled,
         errors: errors,
         offline: true,
+      );
+    } on UnauthorizedException {
+      return SyncReport(
+        pushed: pushed,
+        pulled: pulled,
+        errors: errors,
+        unauthorized: true,
       );
     }
     return SyncReport(pushed: pushed, pulled: pulled, errors: errors);

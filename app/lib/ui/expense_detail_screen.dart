@@ -47,7 +47,7 @@ class ExpenseDetailScreen extends StatelessWidget {
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth > 840;
-          final withServer = repo.settings.isConfigured;
+          final withServer = repo.withServer;
           final viewer = _ReceiptViewer(
             expense: expense,
             withServer: withServer,

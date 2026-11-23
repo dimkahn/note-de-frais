@@ -43,7 +43,7 @@ Future<Expense?> scanReceipt(
     processedJpeg: scan.processedJpeg,
   );
   if (context.mounted) {
-    final message = !repo.settings.isConfigured
+    final message = !repo.withServer
         ? 'Enregistré sur l\'appareil'
         : (repo.lastReport?.offline ?? true)
         ? 'Enregistré sur l\'appareil, envoi dès que possible'

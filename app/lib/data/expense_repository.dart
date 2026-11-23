@@ -8,6 +8,7 @@ import '../domain/expense.dart';
 import '../domain/quad.dart';
 import '../domain/receipt_parser.dart';
 import '../domain/receipt_text_reader.dart';
+import 'account_repository.dart';
 import 'expense_api.dart';
 import 'file_store.dart';
 import 'local_store.dart';
@@ -20,28 +21,37 @@ class ExpenseRepository extends ChangeNotifier {
     required LocalStore store,
     required FileStore files,
     required http.Client httpClient,
+    required AccountRepository account,
     this.pollInterval = const Duration(seconds: 4),
     this._textReader,
   }) : _store = store,
-       _files = files {
+       _files = files,
+       _account = account,
+       _wasConnected = account.connected {
+    _account.addListener(_onAccountChanged);
     _sync = SyncService(
       store: store,
-      api: ExpenseApi(client: httpClient, settings: () => _settings),
+      api: ExpenseApi(
+        client: httpClient,
+        settings: () => _account.settings,
+        token: () => _account.session?.token,
+      ),
       files: files,
     );
   }
 
   final LocalStore _store;
   final FileStore _files;
+  final AccountRepository _account;
 
   /// Lecture du justificatif sur l'appareil (`null` : indisponible, ex. desktop).
   final ReceiptTextReader? _textReader;
   late final SyncService _sync;
+  bool _wasConnected;
 
   /// Intervalle de rafraîchissement tant qu'un traitement serveur est en cours (`null` = désactivé).
   final Duration? pollInterval;
 
-  ServerSettings _settings = const ServerSettings(baseUrl: '');
   List<Expense> _all = const [];
   Future<SyncReport?>? _running;
   bool _syncAgain = false;
@@ -49,7 +59,8 @@ class ExpenseRepository extends ChangeNotifier {
   SyncReport? _lastReport;
   bool _disposed = false;
 
-  ServerSettings get settings => _settings;
+  /// Synchronisation avec le serveur possible (adresse renseignée et compte connecté).
+  bool get withServer => _account.connected;
 
   /// Dépenses visibles (non supprimées), dans l'ordre de la base.
   List<Expense> get expenses =>
@@ -66,21 +77,7 @@ class ExpenseRepository extends ChangeNotifier {
     return null;
   }
 
-  Future<void> load() async {
-    _settings = ServerSettings(
-      baseUrl: await _store.setting('baseUrl') ?? '',
-      token: await _store.setting('token') ?? '',
-    );
-    await _reload();
-  }
-
-  Future<void> saveSettings(ServerSettings settings) async {
-    await _store.setSetting('baseUrl', settings.baseUrl.trim());
-    await _store.setSetting('token', settings.token.trim());
-    _settings = settings;
-    _notify();
-    await sync();
-  }
+  Future<void> load() => _reload();
 
   /// Scan sur l'appareil : la photo brute est conservée telle quelle (original), l'image
   /// recadrée et filtrée localement est visible immédiatement, même hors-ligne.
@@ -177,7 +174,7 @@ class ExpenseRepository extends ChangeNotifier {
       _syncAgain = true;
       return _running!;
     }
-    if (!_settings.isConfigured) return Future.value(null);
+    if (!_account.connected) return Future.value(null);
     _running = _runSync();
     _notify();
     return _running!;
@@ -189,13 +186,27 @@ class ExpenseRepository extends ChangeNotifier {
         _syncAgain = false;
         _lastReport = await _sync.sync();
         await _reload();
-      } while (_syncAgain);
+      } while (_syncAgain && !_lastReport!.unauthorized);
     } finally {
       _running = null;
       _notify();
     }
+    // Données locales conservées : elles repartiront à la prochaine connexion.
+    if (_lastReport!.unauthorized) await _account.expire();
     _schedulePollIfProcessing();
     return _lastReport;
+  }
+
+  /// À la connexion (éventuellement à un autre compte), tout est récupéré et les dépenses
+  /// locales en attente partent vers le compte : l'envoi est idempotent (UUID du client).
+  Future<void> _onAccountChanged() async {
+    final connected = _account.connected;
+    final justConnected = connected && !_wasConnected;
+    _wasConnected = connected;
+    _notify();
+    if (!justConnected) return;
+    await _store.clearLastSync();
+    await sync();
   }
 
   void _schedulePollIfProcessing() {
@@ -227,6 +238,7 @@ class ExpenseRepository extends ChangeNotifier {
 
   @override
   void dispose() {
+    _account.removeListener(_onAccountChanged);
     _disposed = true;
     _poll?.cancel();
     super.dispose();

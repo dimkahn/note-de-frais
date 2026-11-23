@@ -65,6 +65,14 @@ void main() {
     expect(await store.lastSync(), DateTime.utc(2026, 3, 10, 12));
   });
 
+  test('oublie la date de dernière synchronisation', () async {
+    await store.setLastSync(DateTime.utc(2026, 3, 10, 12));
+
+    await store.clearLastSync();
+
+    expect(await store.lastSync(), isNull);
+  });
+
   test('mémorise les réglages', () async {
     await store.setSetting('baseUrl', 'http://serveur');
 

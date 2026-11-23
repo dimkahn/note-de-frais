@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'documents_screen.dart';
 import 'home_screen.dart';
-import 'settings_screen.dart';
+import 'account_screen.dart';
 
 /// Navigation principale : un onglet par usage. L'état de chaque onglet est conservé.
 class MainShell extends StatefulWidget {
@@ -19,7 +19,7 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) => Scaffold(
     body: IndexedStack(
       index: _tab,
-      children: const [HomeScreen(), DocumentsScreen(), SettingsScreen()],
+      children: const [HomeScreen(), DocumentsScreen(), AccountScreen()],
     ),
     bottomNavigationBar: NavigationBar(
       selectedIndex: _tab,
@@ -36,9 +36,9 @@ class _MainShellState extends State<MainShell> {
           label: 'Documents',
         ),
         NavigationDestination(
-          icon: Icon(Icons.tune_outlined),
-          selectedIcon: Icon(Icons.tune),
-          label: 'Réglages',
+          icon: Icon(Icons.account_circle_outlined),
+          selectedIcon: Icon(Icons.account_circle),
+          label: 'Compte',
         ),
       ],
     ),

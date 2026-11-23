@@ -1,22 +1,26 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:note_de_frais/data/expense_api.dart';
+import 'package:note_de_frais/data/account_repository.dart';
 import 'package:note_de_frais/data/expense_repository.dart';
 import 'package:note_de_frais/data/file_store.dart';
 import 'package:note_de_frais/data/local_store.dart';
+import 'package:note_de_frais/domain/account.dart';
 import 'package:note_de_frais/domain/expense.dart';
 import 'package:note_de_frais/domain/quad.dart';
 import 'package:note_de_frais/domain/receipt_text_reader.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
+import '../support/memory_session_store.dart';
 
 void main() {
   sqfliteFfiInit();
   late Directory dir;
   late LocalStore store;
   late FakeServer server;
+  late MemorySessionStore sessions;
+  late AccountRepository account;
   late ExpenseRepository repo;
 
   setUp(() async {
@@ -26,18 +30,33 @@ void main() {
       factory: databaseFactoryFfi,
     );
     server = FakeServer();
+    // Connecté par défaut : session « jeton » reconnue par le faux serveur.
+    sessions = MemorySessionStore(
+      const Session(
+        token: 'jeton',
+        account: Account(email: 'alice@example.com', plan: Plan.free),
+      ),
+    );
+    account = AccountRepository(
+      store: store,
+      sessions: sessions,
+      httpClient: server.client,
+    );
+    await account.load();
+    await account.saveServerAddress('http://serveur');
     repo = ExpenseRepository(
       store: store,
       files: FileStore(dir),
       httpClient: server.client,
+      account: account,
       pollInterval: null,
     );
     await repo.load();
-    await repo.saveSettings(const ServerSettings(baseUrl: 'http://serveur'));
   });
 
   tearDown(() async {
     repo.dispose();
+    account.dispose();
     await store.close();
     await dir.delete(recursive: true);
   });
@@ -102,20 +121,6 @@ void main() {
     expect(server.expenses.containsKey(e.id), isFalse);
   });
 
-  test('les réglages serveur sont conservés', () async {
-    final reopened = ExpenseRepository(
-      store: store,
-      files: FileStore(dir),
-      httpClient: server.client,
-      pollInterval: null,
-    );
-
-    await reopened.load();
-
-    expect(reopened.settings.baseUrl, 'http://serveur');
-    reopened.dispose();
-  });
-
   test('un scan conserve la photo brute, affiche tout de suite l\'image recadrée et envoie le contour', () async {
     server.offline = true;
     final quad = Quad.inset(0.15);
@@ -166,6 +171,91 @@ void main() {
     },
   );
 
+  group('compte', () {
+    const password = 'mot de passe long';
+
+    test(
+      'sans compte, une capture reste sur l\'appareil et rien n\'est envoyé',
+      () async {
+        await account.logout();
+        server.requests.clear();
+
+        final e = await scan(ImageFilter.enhance);
+
+        expect(server.requests, isEmpty);
+        expect(repo.byId(e.id)!.syncState, SyncState.pendingUpload);
+        expect(repo.withServer, isFalse);
+      },
+    );
+
+    test('à la connexion, les dépenses locales sont envoyées vers le compte avec leur identifiant', () async {
+      await account.logout();
+      final e = await scan(ImageFilter.enhance);
+
+      await account.register('alice@example.com', password);
+      await repo.sync(); // attend la synchro lancée par la connexion
+
+      expect(server.expenses.keys, [e.id]);
+      final upload = server.requests.lastWhere(
+        (r) => r.method == 'POST' && r.url.path == '/api/expenses',
+      );
+      expect(
+        upload.headers['Authorization'],
+        'Bearer ${account.session!.token}',
+      );
+      expect(repo.byId(e.id)!.syncState, SyncState.synced);
+    });
+
+    test('se reconnecter ne renvoie pas les dépenses déjà envoyées', () async {
+      await account.logout();
+      await scan(ImageFilter.enhance);
+      await account.register('alice@example.com', password);
+      await repo.sync();
+      await account.logout();
+      server.requests.clear();
+
+      await account.login('alice@example.com', password);
+      await repo.sync();
+
+      expect(
+        server.requests.where(
+          (r) => r.method == 'POST' && r.url.path == '/api/expenses',
+        ),
+        isEmpty,
+      );
+    });
+
+    test(
+      'à la connexion, toutes les dépenses du compte sont récupérées',
+      () async {
+        server.processed('recente');
+        await repo.sync(); // dernière synchro mémorisée
+        await account.logout();
+        server.processed('ancienne');
+        server.expenses['ancienne']!['updatedAt'] = '2020-01-01T00:00:00Z';
+
+        await account.register('bob@example.com', password);
+        await repo.sync();
+
+        expect(repo.byId('ancienne'), isNotNull);
+      },
+    );
+
+    test(
+      'une session refusée déconnecte en conservant les dépenses locales',
+      () async {
+        final e = await scan(ImageFilter.enhance);
+        server.expireSessions();
+
+        await repo.edit(e.copyWith(merchant: 'Ibis'));
+
+        expect(account.signedIn, isFalse);
+        expect(repo.byId(e.id)!.merchant, 'Ibis');
+        expect(repo.byId(e.id)!.syncState, SyncState.pendingUpdate);
+      },
+    );
+  });
+
   group('lecture du justificatif sur l\'appareil', () {
     const ticket = 'CARREFOUR MARKET\n14/03/2026\nTOTAL TTC 5,70 €';
 
@@ -173,6 +263,7 @@ void main() {
       store: store,
       files: FileStore(dir),
       httpClient: server.client,
+      account: account,
       pollInterval: null,
       textReader: reader,
     );

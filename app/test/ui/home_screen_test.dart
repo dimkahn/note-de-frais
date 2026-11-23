@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:note_de_frais/data/account_repository.dart';
 import 'package:note_de_frais/data/expense_repository.dart';
 import 'package:note_de_frais/data/export_service.dart';
 import 'package:note_de_frais/data/file_store.dart';
@@ -15,6 +16,7 @@ import 'package:note_de_frais/ui/home_screen.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
 
+import '../support/memory_session_store.dart';
 import '../support/temp_downloads.dart';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -54,10 +56,17 @@ void main() {
       for (final e in expenses) {
         await store.save(e);
       }
+      final client = MockClient((_) async => http.Response('[]', 200));
       repo = ExpenseRepository(
         store: store,
         files: FileStore(Directory.systemTemp),
-        httpClient: MockClient((_) async => http.Response('[]', 200)),
+        httpClient: client,
+        // Sans compte : tout reste sur l'appareil.
+        account: AccountRepository(
+          store: store,
+          sessions: MemorySessionStore(),
+          httpClient: client,
+        ),
         pollInterval: null,
       );
       await repo.load();

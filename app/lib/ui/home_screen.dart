@@ -47,7 +47,7 @@ class _HomeScreenState extends State<HomeScreen> {
               actions: [
                 if (filtered.isNotEmpty)
                   ExportButton.report(reportOf(filtered)),
-                if (repo.settings.isConfigured) _SyncButton(repo: repo),
+                if (repo.withServer) _SyncButton(repo: repo),
               ],
             ),
             SliverToBoxAdapter(child: _TotalBanner(expenses: filtered)),
@@ -76,7 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     return ExpenseTile(
                       key: ValueKey(e.id),
                       expense: e,
-                      withServer: repo.settings.isConfigured,
+                      withServer: repo.withServer,
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
