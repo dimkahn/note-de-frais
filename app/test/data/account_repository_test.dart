@@ -7,6 +7,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
 import '../support/fake_biometric_auth.dart';
+import '../support/fake_google_auth.dart';
 import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 
@@ -19,13 +20,17 @@ void main() {
   late FakeBiometricAuth biometrics;
   late FakeServer server;
 
+  late FakeGoogleAuth google;
+
   AccountRepository newRepository({
     String defaultServerAddress = 'http://defaut:8080',
+    bool withGoogle = true,
   }) => AccountRepository(
     store: store,
     sessions: sessions,
     deviceKeys: deviceKeys,
     biometrics: biometrics,
+    google: withGoogle ? google : null,
     httpClient: server.client,
     defaultServerAddress: defaultServerAddress,
   );
@@ -38,6 +43,7 @@ void main() {
     sessions = MemorySessionStore();
     deviceKeys = MemoryDeviceKeyStore();
     biometrics = FakeBiometricAuth();
+    google = FakeGoogleAuth();
     server = FakeServer();
   });
 
@@ -446,6 +452,74 @@ void main() {
 
       expect(repo.biometricEnabled, isFalse);
       expect(deviceKeys.deviceKey, isNull);
+    });
+  });
+
+  group('connexion Google', () {
+    test(
+      'sans identifiant client Google au build, elle n\'est pas proposée',
+      () async {
+        final repo = newRepository(withGoogle: false);
+
+        await repo.load();
+
+        expect(repo.googleSignInAvailable, isFalse);
+      },
+    );
+
+    test(
+      'ouvre une session avec le jeton d\'identité Google puis lit l\'usage',
+      () async {
+        server.googleIdentities['jeton-google'] = 'alice@gmail.com';
+        server.usedBytes = 2048;
+        final repo = await withServer();
+
+        await repo.loginWithGoogle();
+
+        expect(repo.googleSignInAvailable, isTrue);
+        expect(repo.connected, isTrue);
+        expect(repo.session!.account.email, 'alice@gmail.com');
+        expect(repo.session!.account.usage!.usedBytes, 2048);
+        expect(await sessions.read(), isNotNull);
+      },
+    );
+
+    test('annulée, elle laisse déconnecté sans appeler le serveur', () async {
+      google.token = null;
+      final repo = await withServer();
+
+      await repo.loginWithGoogle();
+
+      expect(repo.signedIn, isFalse);
+      expect(server.requests, isEmpty);
+    });
+
+    test('sans adresse de serveur, Google n\'est pas sollicité', () async {
+      final repo = newRepository(defaultServerAddress: '');
+      await repo.load();
+
+      await expectLater(repo.loginWithGoogle(), throwsA(isA<AuthException>()));
+      expect(google.prompts, 0);
+    });
+
+    test('un jeton refusé par le serveur donne un message clair', () async {
+      final repo = await withServer();
+
+      await expectLater(repo.loginWithGoogle(), throwsA(isA<AuthException>()));
+      expect(repo.signedIn, isFalse);
+    });
+
+    test('se connecter avec Google à un autre compte efface la clé d\'empreinte de l\'ancien', () async {
+      server.googleIdentities['jeton-google'] = 'bob@gmail.com';
+      final repo = await withServer();
+      await repo.register('alice@example.com', password);
+      await repo.enableBiometricLogin();
+      await repo.logout();
+
+      await repo.loginWithGoogle();
+
+      expect(deviceKeys.deviceKey, isNull);
+      expect(repo.biometricEnabled, isFalse);
     });
   });
 }

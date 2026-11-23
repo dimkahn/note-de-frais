@@ -33,6 +33,9 @@ class FakeServer {
   /// `GET /api/account` en erreur 500.
   var accountFails = false;
 
+  /// Jetons d'identité Google acceptés (jeton → e-mail du compte ouvert).
+  final googleIdentities = <String, String>{};
+
   /// Clés d'appareil valides (clé → e-mail du compte).
   final deviceKeys = <String, String>{};
   var _issued = 0;
@@ -48,6 +51,7 @@ class FakeServer {
       return _authenticate(request);
     }
     if (path == '/api/auth/device-login') return _deviceLogin(request);
+    if (path == '/api/auth/google') return _googleLogin(request);
     final token = request.headers['Authorization']?.replaceFirst('Bearer ', '');
     if (!sessions.contains(token)) return http.Response('', 401);
     if (path == '/api/auth/logout') {
@@ -129,6 +133,12 @@ class FakeServer {
 
   http.Response _deviceLogin(http.Request request) {
     final email = deviceKeys[_body(request)['deviceKey']];
+    if (email == null) return http.Response('', 401);
+    return _openSession(email);
+  }
+
+  http.Response _googleLogin(http.Request request) {
+    final email = googleIdentities[_body(request)['idToken']];
     if (email == null) return http.Response('', 401);
     return _openSession(email);
   }

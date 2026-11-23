@@ -13,6 +13,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../support/fake_server.dart';
 import '../support/fake_biometric_auth.dart';
+import '../support/fake_google_auth.dart';
 import '../support/memory_device_key_store.dart';
 import '../support/memory_session_store.dart';
 import '../support/settle.dart';
@@ -33,6 +34,7 @@ void main() {
     String defaultServerAddress = 'http://defaut:8080',
     bool biometricAvailable = true,
     String? deviceKey,
+    bool withGoogle = false,
   }) async {
     server = FakeServer();
     deviceKeys = MemoryDeviceKeyStore(deviceKey);
@@ -47,6 +49,7 @@ void main() {
         sessions: MemorySessionStore(),
         deviceKeys: deviceKeys,
         biometrics: biometrics,
+        google: withGoogle ? FakeGoogleAuth() : null,
         httpClient: server.client,
         defaultServerAddress: defaultServerAddress,
       );
@@ -296,6 +299,51 @@ void main() {
 
     expect(find.text('E-mail ou mot de passe incorrect.'), findsOneWidget);
     expect(account.signedIn, isFalse);
+  });
+
+  group('connexion Google', () {
+    const continueWithGoogle = 'Continuer avec Google';
+
+    testWidgets(
+      'sans identifiant client Google au build, le bouton n\'est pas affiché',
+      (tester) async {
+        await pumpAccount(tester);
+
+        expect(find.text(continueWithGoogle), findsNothing);
+      },
+    );
+
+    testWidgets('connecte au compte Google, affiche le compte et synchronise', (
+      tester,
+    ) async {
+      await pumpAccount(tester, withGoogle: true);
+      server.googleIdentities['jeton-google'] = 'alice@gmail.com';
+
+      await tester.ensureVisible(find.text(continueWithGoogle));
+      await tester.tap(find.text(continueWithGoogle));
+      await settleRealAsync(tester);
+
+      expect(account.signedIn, isTrue);
+      expect(find.text('alice@gmail.com'), findsOneWidget);
+      expect(find.text('Activer la connexion par empreinte'), findsOneWidget);
+      expect(
+        server.requests.map((r) => r.url.path),
+        contains('/api/expenses/changes'),
+      );
+    });
+
+    testWidgets('un refus du serveur s\'affiche sous le formulaire', (
+      tester,
+    ) async {
+      await pumpAccount(tester, withGoogle: true);
+
+      await tester.ensureVisible(find.text(continueWithGoogle));
+      await tester.tap(find.text(continueWithGoogle));
+      await settleRealAsync(tester);
+
+      expect(account.signedIn, isFalse);
+      expect(find.text('Connexion Google refusée, réessayez.'), findsOneWidget);
+    });
   });
 
   testWidgets('se déconnecter revient au formulaire', (tester) async {

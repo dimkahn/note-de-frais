@@ -29,6 +29,28 @@ final class AuthApi {
   Future<Session> login(String email, String password) =>
       _authenticate('/api/auth/login', email, password);
 
+  /// Nouvelle session à partir d'un jeton d'identité Google ; refus → [AuthException].
+  Future<Session> googleLogin(String idToken) async {
+    final response = await _send(
+      () => _client.post(
+        _uri('/api/auth/google'),
+        headers: _jsonContent,
+        body: jsonEncode({'idToken': idToken}),
+      ),
+    );
+    final message = switch (response.statusCode) {
+      401 => 'Connexion Google refusée, réessayez.',
+      // Motif rédigé par le serveur : e-mail non vérifié, compte lié à un autre compte Google…
+      403 => _sentence(
+        _problem(response)['detail'] as String? ?? 'Connexion Google refusée',
+      ),
+      503 => 'Connexion Google indisponible sur ce serveur pour le moment.',
+      _ => null,
+    };
+    if (message != null) throw AuthException(message);
+    return _session(_check(response));
+  }
+
   Future<void> logout(String token) async {
     final response = await _send(
       () => _client.post(_uri('/api/auth/logout'), headers: _bearer(token)),
@@ -99,6 +121,9 @@ final class AuthApi {
       400 =>
         'Adresse e-mail invalide ou mot de passe trop court '
             '(10 caractères minimum).',
+      401 when _problem(response)['code'] == 'PASSWORD_NOT_SET' =>
+        'Ce compte n\'a pas de mot de passe : '
+            'utilisez « Continuer avec Google ».',
       401 => 'E-mail ou mot de passe incorrect.',
       409 => 'Un compte existe déjà avec cette adresse e-mail.',
       _ => null,
@@ -132,6 +157,19 @@ final class AuthApi {
       throw ApiException(response.statusCode, response.body);
     }
     return response;
+  }
+
+  static String _sentence(String text) => text.endsWith('.') ? text : '$text.';
+
+  /// Corps d'erreur du serveur (RFC 9457), vide s'il n'est pas lisible.
+  static Map<String, Object?> _problem(http.Response r) {
+    try {
+      return _json(r);
+    } on FormatException {
+      return const {};
+    } on TypeError {
+      return const {};
+    }
   }
 
   static Map<String, Object?> _json(http.Response r) =>

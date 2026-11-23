@@ -173,6 +173,14 @@ class _SignInFormState extends State<_SignInForm> {
               onPressed: _busy ? null : () => _run(account.loginWithBiometrics),
             ),
           ],
+          if (account.googleSignInAvailable) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.account_circle_outlined),
+              label: const Text('Continuer avec Google'),
+              onPressed: _busy ? null : () => _run(account.loginWithGoogle),
+            ),
+          ],
         ],
       ),
     );

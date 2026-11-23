@@ -23,3 +23,16 @@ const _apiUrl = String.fromEnvironment('API_URL');
 /// sinon celle du type de build.
 String get defaultServerUrl =>
     _apiUrl.isNotEmpty ? _apiUrl : buildServerUrl(release: kReleaseMode);
+
+/// Identifiant client OAuth « web » du serveur (`….apps.googleusercontent.com`), le même que
+/// `NDF_GOOGLE_CLIENT_ID` côté serveur : l'audience des jetons Google envoyés au serveur.
+/// À renseigner ici une fois créé (voir docs/design/comptes-et-offres.md, « Mise en place
+/// Google ») ; vide → pas de bouton « Continuer avec Google ».
+const buildGoogleServerClientId = '';
+
+/// Identifiant client Google utilisé : `--dart-define=GOOGLE_SERVER_CLIENT_ID=...` si fourni
+/// au build (prioritaire), sinon [buildGoogleServerClientId].
+const googleServerClientId = String.fromEnvironment(
+  'GOOGLE_SERVER_CLIENT_ID',
+  defaultValue: buildGoogleServerClientId,
+);

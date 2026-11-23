@@ -9,4 +9,8 @@ void main() {
   test('un build release vise le serveur de production en https', () {
     expect(buildServerUrl(release: true), 'https://api.notedefrais.fr');
   });
+
+  test('sans identifiant client Google fourni au build, la connexion Google n\'est pas proposée', () {
+    expect(googleServerClientId, isEmpty);
+  });
 }

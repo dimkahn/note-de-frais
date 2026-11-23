@@ -214,4 +214,133 @@ void main() {
       expect(jsonDecode(seen.body), {'deviceKey': 'cle-appareil'});
     },
   );
+
+  group('connexion Google', () {
+    test('envoie le jeton d\'identité Google et rend la session', () async {
+      late http.Request seen;
+      final api = _api((r) async {
+        seen = r;
+        return _json({'token': 'jeton', 'account': _alice});
+      });
+
+      final session = await api.googleLogin('jeton-google');
+
+      expect(seen.method, 'POST');
+      expect(seen.url.path, '/api/auth/google');
+      expect(jsonDecode(seen.body), {'idToken': 'jeton-google'});
+      expect(session.token, 'jeton');
+      expect(session.account.email, 'alice@example.com');
+    });
+
+    test('un jeton refusé par le serveur donne un message clair', () async {
+      final api = _api((_) async => _json({'status': 401}, 401));
+
+      expect(
+        api.googleLogin('falsifie'),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            'Connexion Google refusée, réessayez.',
+          ),
+        ),
+      );
+    });
+
+    test(
+      'un compte que Google ne peut pas ouvrir affiche le motif du serveur',
+      () async {
+        final api = _api(
+          (_) async => _json({
+            'status': 403,
+            'detail': 'Adresse e-mail Google non vérifiée',
+          }, 403),
+        );
+
+        expect(
+          api.googleLogin('jeton-google'),
+          throwsA(
+            isA<AuthException>().having(
+              (e) => e.message,
+              'message',
+              'Adresse e-mail Google non vérifiée.',
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'une connexion Google indisponible sur le serveur l\'explique',
+      () async {
+        final api = _api((_) async => _json({'status': 503}, 503));
+
+        expect(
+          api.googleLogin('jeton-google'),
+          throwsA(
+            isA<AuthException>().having(
+              (e) => e.message,
+              'message',
+              'Connexion Google indisponible sur ce serveur pour le moment.',
+            ),
+          ),
+        );
+      },
+    );
+  });
+
+  test('la connexion par mot de passe d\'un compte Google invite à continuer avec Google', () async {
+    final api = _api(
+      (_) async => _json({'status': 401, 'code': 'PASSWORD_NOT_SET'}, 401),
+    );
+
+    expect(
+      api.login('alice@gmail.com', 'mot de passe long'),
+      throwsA(
+        isA<AuthException>().having(
+          (e) => e.message,
+          'message',
+          'Ce compte n\'a pas de mot de passe : utilisez « Continuer avec Google ».',
+        ),
+      ),
+    );
+  });
+
+  test(
+    'un motif de refus déjà ponctué n\'est pas doublé d\'un point',
+    () async {
+      final api = _api(
+        (_) async => _json({'status': 403, 'detail': 'Compte déjà lié.'}, 403),
+      );
+
+      expect(
+        api.googleLogin('jeton-google'),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            'Compte déjà lié.',
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'un refus de connexion sans corps lisible reste « mot de passe incorrect »',
+    () async {
+      final api = _api((_) async => http.Response('', 401));
+
+      expect(
+        api.login('alice@example.com', 'mot de passe long'),
+        throwsA(
+          isA<AuthException>().having(
+            (e) => e.message,
+            'message',
+            'E-mail ou mot de passe incorrect.',
+          ),
+        ),
+      );
+    },
+  );
 }

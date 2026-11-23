@@ -8,6 +8,7 @@ import 'auth_api.dart';
 import 'biometric_auth.dart';
 import 'device_key_store.dart';
 import 'expense_api.dart';
+import 'google_auth.dart';
 import 'local_store.dart';
 import 'server_config.dart';
 import 'session_store.dart';
@@ -20,6 +21,7 @@ class AccountRepository extends ChangeNotifier {
     required this._sessions,
     required this._deviceKeys,
     required this._biometrics,
+    this._google,
     required http.Client httpClient,
     String? defaultServerAddress,
   }) : _defaultServerAddress = defaultServerAddress ?? defaultServerUrl {
@@ -30,6 +32,9 @@ class AccountRepository extends ChangeNotifier {
   final SessionStore _sessions;
   final DeviceKeyStore _deviceKeys;
   final BiometricAuth _biometrics;
+
+  /// Absent quand aucun identifiant client Google n'est fourni au build.
+  final GoogleAuth? _google;
   late final AuthApi _api;
 
   /// Adresse du build, utilisée quand aucune n'est saisie.
@@ -84,6 +89,21 @@ class AccountRepository extends ChangeNotifier {
 
   Future<void> login(String email, String password) async {
     await _open(() => _api.login(email.trim(), password));
+    await _forgetDeviceKeyOfAnotherAccount();
+  }
+
+  /// La connexion Google est configurée pour ce build.
+  bool get googleSignInAvailable => _google != null;
+
+  /// Se connecte avec le compte Google de l'appareil (compte créé ou lié par le serveur si besoin).
+  /// Annulée par l'utilisateur → rien ne change.
+  Future<void> loginWithGoogle() async {
+    final google = _google;
+    if (google == null) return;
+    _requireServer();
+    final idToken = await google.idToken();
+    if (idToken == null) return;
+    await _open(() => _api.googleLogin(idToken));
     await _forgetDeviceKeyOfAnotherAccount();
   }
 
@@ -191,12 +211,16 @@ class AccountRepository extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _open(Future<Session> Function() authenticate) async {
+  void _requireServer() {
     if (!settings.isConfigured) {
       throw AuthException(
         'Renseignez d\'abord l\'adresse du serveur (section « Avancé »).',
       );
     }
+  }
+
+  Future<void> _open(Future<Session> Function() authenticate) async {
+    _requireServer();
     await _keep(await authenticate());
     await refresh(); // usage et quota, absents de la réponse de connexion
   }

@@ -16,10 +16,12 @@ import 'data/device_key_store.dart';
 import 'data/document_repository.dart';
 import 'data/expense_repository.dart';
 import 'data/export_service.dart';
+import 'data/google_auth.dart';
 import 'data/platform_downloads_folder.dart';
 import 'data/system_file_sharer.dart';
 import 'data/file_store.dart';
 import 'data/local_store.dart';
+import 'data/server_config.dart';
 import 'data/session_store.dart';
 import 'scan/mlkit_receipt_text_reader.dart';
 import 'ui/launch_screen.dart';
@@ -59,6 +61,9 @@ Future<AppServices> _start() async {
     sessions: SecureSessionStore(),
     deviceKeys: SecureDeviceKeyStore(),
     biometrics: LocalBiometricAuth(),
+    google: googleServerClientId.isEmpty
+        ? null
+        : PluginGoogleAuth(serverClientId: googleServerClientId),
     httpClient: httpClient,
   );
   await account.load();
