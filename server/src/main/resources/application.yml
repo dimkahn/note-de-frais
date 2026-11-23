@@ -1,5 +1,6 @@
 app:
-  # Justificatifs : <storage-dir>/<id>/original.<ext> (jamais modifié) et processed.jpg
+  # Justificatifs : <storage-dir>/<id>/original.<ext> (jamais modifié) et processed.jpg ;
+  # pages de documents : <storage-dir>/documents/<pageId>/…
   storage-dir: ${NDF_STORAGE_DIR:./storage}
   # Jeton d'administration, exigé dans l'en-tête X-Api-Token sur /api/admin/** ; vide = administration fermée
   api-token: ${NDF_API_TOKEN:}

@@ -242,8 +242,8 @@ l'usage des dépenses non supprimées et des pages non retirées de documents no
 
 | Endpoint | Résultat |
 |---|---|
-| `PUT /api/documents/{id}` `{title, pageIds}` | 200 `DocumentDto` ; crée le document s'il n'existe pas, sinon renomme et réordonne ; les pages déjà reçues absentes de `pageIds` sont retirées (logiquement), un identifiant pas encore reçu garde sa place pour la page envoyée ensuite ; 400 titre vide ou trop long |
-| `POST /api/documents/{id}/pages` multipart `pageId, original, processed, filter, corners` | 200 `PageDto` ; idempotent par `pageId` (renvoi = page existante, original intact) ; 403 `QUOTA_EXCEEDED` si `usage + original + rendu > quota` ; 415 type non image (rendu : JPEG) |
+| `PUT /api/documents/{id}` `{title, pageIds}` | 200 `DocumentDto` ; crée le document s'il n'existe pas, sinon renomme et réordonne ; les pages déjà reçues absentes de `pageIds` sont retirées (logiquement), un identifiant pas encore reçu garde sa place pour la page envoyée ensuite ; réintégrer une page retirée est soumis au quota (403) ; 400 titre vide ou trop long |
+| `POST /api/documents/{id}/pages` multipart `pageId, original, processed, filter` (+ `corners` facultatif) | 200 `PageDto` ; idempotent par `pageId` (renvoi = page existante, original intact) ; 403 `QUOTA_EXCEEDED` si `usage + original + rendu > quota` ; 415 type non image (rendu : JPEG) |
 | `POST /api/documents/{id}/pages/{pageId}/processed` multipart `processed, filter, corners` | 200 `PageDto` ; remplace le rendu, `renderVersion` +1, taille mise à jour ; l'original ne change pas ; pas de refus pour quota (comme le re-traitement d'une dépense) |
 | `DELETE /api/documents/{id}` | 204 ; suppression logique (libère le quota, fichiers conservés) |
 | `GET /api/documents/changes?since=` | documents du compte modifiés depuis (suppressions comprises) |

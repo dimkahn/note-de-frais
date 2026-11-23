@@ -10,6 +10,9 @@ import fr.notedefrais.account.GoogleIdentityVerifier;
 import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.StorageUsage;
 import fr.notedefrais.account.SessionRepository;
+import fr.notedefrais.document.DocumentPageRepository;
+import fr.notedefrais.document.DocumentRepository;
+import fr.notedefrais.document.DocumentService;
 import fr.notedefrais.extraction.ClaudeReceiptExtractor;
 import fr.notedefrais.google.DisabledGoogleIdentityVerifier;
 import fr.notedefrais.google.GoogleIdTokenIdentityVerifier;
@@ -34,6 +37,13 @@ public class InfrastructureConfig {
     @Bean
     FileStorage fileStorage(AppProperties props) {
         return new LocalFileStorage(Path.of(props.storageDir()));
+    }
+
+    /** Pages dans {@code <storage-dir>/documents/<pageId>/} : un identifiant de page ne vise jamais une dépense. */
+    @Bean
+    DocumentService documentService(DocumentRepository documents, DocumentPageRepository pages, Quota quota,
+                                    AppProperties props) {
+        return new DocumentService(documents, pages, new LocalFileStorage(Path.of(props.storageDir(), "documents")), quota);
     }
 
     @Bean

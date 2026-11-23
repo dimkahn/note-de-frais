@@ -2,14 +2,12 @@ package fr.notedefrais.web;
 
 import fr.notedefrais.expense.*;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
-import fr.notedefrais.imaging.Quad;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
@@ -20,9 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/api/expenses")
 public class ExpenseController {
-
-    private static final Set<String> ACCEPTED_TYPES =
-            Set.of("image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic");
 
     private final ExpenseService service;
 
@@ -36,12 +31,10 @@ public class ExpenseController {
                                              @RequestParam(required = false) UUID id,
                                              @RequestParam(required = false) ImageFilter filter,
                                              @RequestParam(required = false) String corners) throws IOException {
-        if (file.isEmpty()) throw new BadRequestException("Fichier vide");
-        String type = file.getContentType() == null ? "" : file.getContentType().toLowerCase();
-        if (!ACCEPTED_TYPES.contains(type)) throw new UnsupportedImageTypeException(type);
+        String type = ImageUploads.requireImage(file);
 
         UUID expenseId = id == null ? UUID.randomUUID() : id;
-        Expense expense = service.register(ownerId, expenseId, file.getBytes(), type, filter, parseCorners(corners));
+        Expense expense = service.register(ownerId, expenseId, file.getBytes(), type, filter, ImageUploads.parseCorners(corners));
         return ResponseEntity.accepted()
                 .location(URI.create("/api/expenses/" + expenseId))
                 .body(ExpenseDto.of(expense));
@@ -93,7 +86,7 @@ public class ExpenseController {
                                                 @PathVariable UUID id,
                                                 @RequestParam(required = false) ImageFilter filter,
                                                 @RequestParam(required = false) String corners) {
-        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(ownerId, id, filter, parseCorners(corners))));
+        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(ownerId, id, filter, ImageUploads.parseCorners(corners))));
     }
 
     @DeleteMapping("/{id}")
@@ -113,9 +106,5 @@ public class ExpenseController {
     @GetMapping(value = "/{id}/processed", produces = MediaType.IMAGE_JPEG_VALUE)
     public byte[] processed(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId, @PathVariable UUID id) {
         return service.processed(ownerId, id);
-    }
-
-    private static Quad parseCorners(String corners) {
-        return corners == null || corners.isBlank() ? null : Quad.parse(corners);
     }
 }

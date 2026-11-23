@@ -9,6 +9,7 @@ import fr.notedefrais.account.InvalidDeviceKeyException;
 import fr.notedefrais.account.InvalidGoogleTokenException;
 import fr.notedefrais.account.InvalidPasswordException;
 import fr.notedefrais.account.PasswordNotSetException;
+import fr.notedefrais.document.DocumentNotFoundException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.imaging.InvalidQuadException;
@@ -29,6 +30,11 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(ExpenseNotFoundException.class)
     ProblemDetail notFound(ExpenseNotFoundException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    @ExceptionHandler(DocumentNotFoundException.class)
+    ProblemDetail documentNotFound(DocumentNotFoundException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, e.getMessage());
     }
 

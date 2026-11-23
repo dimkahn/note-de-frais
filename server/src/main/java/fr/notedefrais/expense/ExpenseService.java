@@ -5,10 +5,10 @@ import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
 import fr.notedefrais.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
+import fr.notedefrais.storage.ImageTypes;
 import fr.notedefrais.storage.StorageException;
 import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,7 +53,7 @@ public class ExpenseService {
         quota.ensureRoomFor(ownerId, original.length);
 
         var expense = new Expense(id, ownerId);
-        expense.setOriginalFile(storage.saveOriginal(id, original, extensionOf(contentType)));
+        expense.setOriginalFile(storage.saveOriginal(id, original, ImageTypes.extensionOf(contentType)));
         expense.setSizeBytes((long) original.length);
         expense.setOriginalContentType(contentType);
         expense.setFilter(filter == null ? ImageFilter.ENHANCE : filter);
@@ -138,16 +138,5 @@ public class ExpenseService {
         long size = storage.read(e.getId(), e.getOriginalFile()).length;
         if (e.getProcessedFile() != null) size += storage.read(e.getId(), e.getProcessedFile()).length;
         return size;
-    }
-
-    private static String extensionOf(String contentType) {
-        if (contentType == null) return "bin";
-        return switch (contentType.toLowerCase(Locale.ROOT)) {
-            case "image/jpeg", "image/jpg" -> "jpg";
-            case "image/png" -> "png";
-            case "image/webp" -> "webp";
-            case "image/heic" -> "heic";
-            default -> "bin";
-        };
     }
 }
