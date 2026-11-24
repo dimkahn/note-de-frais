@@ -84,4 +84,19 @@ void main() {
       expect(page.rotation, Rotation.none);
     },
   );
+
+  test('une page du scanner système est déjà recadrée : cadre sur l\'image entière', () {
+    final page = CapturedPage.scanned('/cache/page1.jpg');
+
+    expect(page.photoPath, '/cache/page1.jpg');
+    expect(page.corners, Quad.inset(0));
+  });
+
+  test(
+    'le scanner système prend une page en mode Ticket, sans limite en Document',
+    () {
+      expect(ScanMode.ticket.pageLimit, 1);
+      expect(ScanMode.document.pageLimit, isNull);
+    },
+  );
 }

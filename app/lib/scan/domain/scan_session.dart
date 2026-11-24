@@ -10,6 +10,9 @@ enum ScanMode {
   const ScanMode(this.label);
 
   final String label;
+
+  /// Pages au plus par passage dans le scanner système (`null` : sans limite).
+  int? get pageLimit => this == ticket ? 1 : null;
 }
 
 /// Page prise pendant un scan : la photo brute et ses réglages de rendu.
@@ -21,6 +24,10 @@ final class CapturedPage {
     this.filter = ImageFilter.enhance,
     this.rotation = Rotation.none,
   });
+
+  /// Page rendue par le scanner système (ML Kit), déjà recadrée : cadre sur l'image entière.
+  factory CapturedPage.scanned(String photoPath) =>
+      CapturedPage(photoPath: photoPath, corners: Quad.inset(0));
 
   final String photoPath;
 
