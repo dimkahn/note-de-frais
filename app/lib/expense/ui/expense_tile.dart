@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/expense.dart';
 import '../../shared/ui/format.dart';
+import 'category_style.dart';
 import 'status_badge.dart';
 import 'receipt_image.dart';
 import '../../shared/ui/theme.dart';
@@ -39,11 +40,33 @@ class ExpenseTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       minVerticalPadding: 12,
-      leading: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: SizedBox.square(
-          dimension: 52,
-          child: ReceiptImage(expense: expense),
+      leading: SizedBox.square(
+        dimension: 58,
+        child: Stack(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox.square(
+                dimension: 52,
+                child: ReceiptImage(expense: expense),
+              ),
+            ),
+            // Pastille du type, détourée de la couleur de la carte pour se détacher de la photo.
+            Positioned(
+              right: 0,
+              bottom: 0,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: theme.colorScheme.surfaceContainerLow,
+                    width: 2,
+                  ),
+                ),
+                child: CategoryBadge(category: expense.category, size: 22),
+              ),
+            ),
+          ],
         ),
       ),
       title: Text(

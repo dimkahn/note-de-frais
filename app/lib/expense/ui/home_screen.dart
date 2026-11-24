@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../data/expense_repository.dart';
+import '../domain/category_breakdown.dart';
 import '../domain/expense.dart';
 import '../domain/expense_query.dart';
 import '../../scan/ui/capture.dart';
+import 'category_style.dart';
 import 'expense_detail_screen.dart';
 import 'expense_tile.dart';
 import '../../export/ui/export_button.dart';
@@ -24,11 +26,17 @@ class _HomeScreenState extends State<HomeScreen> {
   ExpenseQuery _query = const ExpenseQuery();
   GroupBy _groupBy = GroupBy.month;
 
+  /// Dépenses déjà affichées : seules les nouvelles (scan, synchro) apparaissent en animation.
+  Set<String>? _shown;
+
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<ExpenseRepository>();
     final filtered = _query.apply(repo.expenses);
     final groups = groupExpenses(filtered, _groupBy);
+    final ids = {for (final e in repo.expenses) e.id};
+    final arrived = _shown == null ? const <String>{} : ids.difference(_shown!);
+    _shown = ids;
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
@@ -68,19 +76,28 @@ class _HomeScreenState extends State<HomeScreen> {
             else
               for (final group in groups) ...[
                 if (_groupBy != GroupBy.none)
-                  SliverToBoxAdapter(child: _GroupHeader(group: group)),
+                  SliverToBoxAdapter(
+                    child: _GroupHeader(
+                      group: group,
+                      byCategory: _groupBy == GroupBy.category,
+                    ),
+                  ),
                 SliverList.builder(
                   itemCount: group.expenses.length,
                   itemBuilder: (context, i) {
                     final e = group.expenses[i];
-                    return ExpenseTile(
+                    return _Appear(
                       key: ValueKey(e.id),
-                      expense: e,
-                      withServer: repo.withServer,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ExpenseDetailScreen(expenseId: e.id),
+                      animate: arrived.contains(e.id),
+                      child: ExpenseTile(
+                        expense: e,
+                        withServer: repo.withServer,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ExpenseDetailScreen(expenseId: e.id),
+                          ),
                         ),
                       ),
                     );
@@ -102,6 +119,32 @@ class _HomeScreenState extends State<HomeScreen> {
             .toSet()
             .toList())
         ..sort();
+}
+
+/// Entrée d'une dépense qui vient d'arriver : elle glisse en place en apparaissant.
+class _Appear extends StatelessWidget {
+  const _Appear({super.key, required this.animate, required this.child});
+
+  final bool animate;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!animate || MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutBack,
+      child: child,
+      builder: (context, t, child) => Opacity(
+        opacity: t.clamp(0, 1),
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * 24),
+          child: child,
+        ),
+      ),
+    );
+  }
 }
 
 class _SyncButton extends StatelessWidget {
@@ -165,6 +208,7 @@ class _FilterBar extends StatelessWidget {
                   label: query.category?.label ?? 'Type',
                   selected: query.category != null,
                   options: {for (final c in ExpenseCategory.values) c: c.label},
+                  leading: (c) => CategoryBadge(category: c, size: 24),
                   onSelected: (c) => onQuery(
                     c == null
                         ? query.copyWith(clearCategory: true)
@@ -243,12 +287,16 @@ class _MenuChip<T> extends StatelessWidget {
     required this.selected,
     required this.options,
     required this.onSelected,
+    this.leading,
   });
 
   final String label;
   final bool selected;
   final Map<T, String> options;
   final ValueChanged<T?> onSelected;
+
+  /// Pictogramme devant chaque option du menu (facultatif).
+  final Widget Function(T value)? leading;
 
   @override
   Widget build(BuildContext context) => MenuAnchor(
@@ -261,6 +309,7 @@ class _MenuChip<T> extends StatelessWidget {
       for (final entry in options.entries)
         MenuItemButton(
           onPressed: () => onSelected(entry.key),
+          leadingIcon: leading?.call(entry.key),
           child: Text(entry.value),
         ),
     ],
@@ -285,6 +334,8 @@ class _TotalBanner extends StatelessWidget {
     if (expenses.isEmpty) return const SizedBox.shrink();
     final theme = Theme.of(context);
     final on = theme.colorScheme.onPrimary;
+    final totals = totalsByCurrency(expenses);
+    final shares = categoryBreakdown(expenses);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: TicketCard(
@@ -300,10 +351,22 @@ class _TotalBanner extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text(
-              formatTotals(totalsByCurrency(expenses)),
-              style: amountStyle(theme.textTheme.headlineMedium)
-                  ?.copyWith(color: on, fontWeight: FontWeight.w800),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: SizeTransition(
+                  sizeFactor: animation,
+                  alignment: Alignment.topLeft,
+                  child: child,
+                ),
+              ),
+              child: Text(
+                formatTotals(totals),
+                key: ValueKey(totals.toString()),
+                style: amountStyle(theme.textTheme.headlineMedium)
+                    ?.copyWith(color: on, fontWeight: FontWeight.w800),
+              ),
             ),
             const SizedBox(height: 2),
             Text(
@@ -312,6 +375,12 @@ class _TotalBanner extends StatelessWidget {
                 color: on.withValues(alpha: 0.85),
               ),
             ),
+            if (shares != null) ...[
+              const SizedBox(height: 14),
+              _BreakdownBar(shares: shares),
+              const SizedBox(height: 10),
+              _BreakdownLegend(shares: shares.take(3).toList(), color: on),
+            ],
           ],
         ),
       ),
@@ -319,10 +388,97 @@ class _TotalBanner extends StatelessWidget {
   }
 }
 
+/// Barre empilée : la part de chaque type dans le total, à sa couleur.
+class _BreakdownBar extends StatelessWidget {
+  const _BreakdownBar({required this.shares});
+
+  final List<CategoryShare> shares;
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+    // Bande blanche : chaque segment s'en détache, même un bleu proche de l'encre du ticket.
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(2),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: SizedBox(
+            height: 10,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final (i, share) in shares.indexed)
+                  Expanded(
+                    flex: (share.fraction * 1000).round().clamp(1, 1000),
+                    child: Padding(
+                      padding: EdgeInsets.only(left: i == 0 ? 0 : 2),
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 600),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, t, _) => FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: t,
+                          child: ColoredBox(
+                            color: categoryStyle(share.category).color,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Les principaux types, avec leur part arrondie : « Hôtel 82 % ».
+class _BreakdownLegend extends StatelessWidget {
+  const _BreakdownLegend({required this.shares, required this.color});
+
+  final List<CategoryShare> shares;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelMedium
+        ?.copyWith(color: color, fontWeight: FontWeight.w600);
+    return Wrap(
+      spacing: 12,
+      runSpacing: 6,
+      children: [
+        for (final share in shares)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CategoryBadge(category: share.category, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                '${share.category?.label ?? 'Sans type'} '
+                '${(share.fraction * 100).round()}\u00a0%',
+                style: style,
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
 class _GroupHeader extends StatelessWidget {
-  const _GroupHeader({required this.group});
+  const _GroupHeader({required this.group, required this.byCategory});
 
   final ExpenseGroup group;
+
+  /// Regroupement par type : l'en-tête porte la pastille du type.
+  final bool byCategory;
 
   @override
   Widget build(BuildContext context) {
@@ -332,6 +488,10 @@ class _GroupHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
       child: Row(
         children: [
+          if (byCategory) ...[
+            CategoryBadge(category: group.expenses.first.category, size: 22),
+            const SizedBox(width: 8),
+          ],
           Expanded(
             child: Text(
               '${group.label.toUpperCase()} · ${group.count}',

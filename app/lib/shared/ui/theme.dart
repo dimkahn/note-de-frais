@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 /// Identité visuelle : le bleu d'une encre de stylo bille sur du papier de caisse.
 ///
 /// - Encre (`primary`) #2747D8 : 7,0:1 sur blanc ; #A9B8FF en sombre : 8,9:1 sur #12131A.
+/// - Fond clair #FAF8F3 : le blanc cassé du papier de caisse.
+/// - Chaque type de dépense a sa couleur (`expense/ui/category_style.dart`).
 /// - Surligneur (`tertiary`) ambre : réservé aux statuts « à vérifier / en attente ».
 /// - Montants en chiffres tabulaires gras ; police système pour tout le reste.
 abstract final class AppTheme {
@@ -17,10 +19,12 @@ abstract final class AppTheme {
     ).copyWith(
       primary: ink,
       onPrimary: Colors.white,
-      surface: const Color(0xFFF7F8FC),
+      surface: const Color(0xFFFAF8F3),
       surfaceContainerLowest: Colors.white,
       surfaceContainerLow: Colors.white,
-      surfaceContainer: const Color(0xFFEEF0F8),
+      surfaceContainer: const Color(0xFFF1EEE6),
+      surfaceContainerHigh: const Color(0xFFEDE9E0),
+      surfaceContainerHighest: const Color(0xFFE7E2D7),
       tertiary: const Color(0xFF7A5900),
       onTertiary: Colors.white,
       tertiaryContainer: const Color(0xFFFFE08A),

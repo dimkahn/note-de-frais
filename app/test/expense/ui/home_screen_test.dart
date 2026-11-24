@@ -122,6 +122,16 @@ void main() {
     expect(find.text('110,00 €'), findsWidgets);
   });
 
+  testWidgets('montre la part de chaque type dans le total', (tester) async {
+    await pumpHome(tester, [
+      expense('a', 'Le Bistrot', ExpenseCategory.restaurant, 'Paris', '20.00'),
+      expense('b', 'Ibis', ExpenseCategory.hotel, 'Lyon', '90.00'),
+    ]);
+
+    expect(find.text('Hôtel 82 %'), findsOneWidget);
+    expect(find.text('Restaurant 18 %'), findsOneWidget);
+  });
+
   testWidgets('filtre par type de dépense', (tester) async {
     await pumpHome(tester, [
       expense('a', 'Le Bistrot', ExpenseCategory.restaurant, 'Paris', '20.00'),
