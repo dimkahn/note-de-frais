@@ -23,7 +23,7 @@
         <flutter.executable>flutter</flutter.executable>
         <flutter.target>apk</flutter.target>
         <flutter.mode>release</flutter.mode>
-        <!-- Vide : l'app garde l'adresse de son type de build (lib/data/server_config.dart). -->
+        <!-- Vide : l'app garde l'adresse de son type de build (lib/shared/data/server_config.dart). -->
         <api.url></api.url>
         <skipTests>false</skipTests>
     </properties>

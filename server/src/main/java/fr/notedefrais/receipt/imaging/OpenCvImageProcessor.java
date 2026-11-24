@@ -18,7 +18,7 @@ import org.opencv.imgproc.Imgproc;
  * → correction de perspective → filtre.
  *
  * <p>Les paramètres (seuils, CLAHE, masque flou, seuillage adaptatif) sont dupliqués dans
- * {@code app/lib/scan/document_scanner.dart} : les garder alignés.
+ * {@code app/lib/scan/data/document_scanner.dart} : les garder alignés.
  *
  * <p>La détection travaille sur une copie réduite (rapide, robuste au bruit) puis les coins sont
  * remis à l'échelle pour redresser l'image pleine résolution.

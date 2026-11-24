@@ -18,7 +18,7 @@ case "$rel" in
     exit 2 ;;
   app/lib/*.dart)
     name=$(basename "$rel" .dart)
-    [[ "$name" == main || "$name" == *.g || "$rel" == app/lib/ui/* ]] && exit 0
+    [[ "$name" == main || "$name" == *.g || "$rel" == app/lib/*/ui/* || "$rel" == app/lib/shell/* ]] && exit 0
     find "$root/app/test" -name "${name}_test.dart" 2>/dev/null | grep -q . && exit 0
     echo "TDD : aucun test trouvé pour $name (attendu app/test/**/${name}_test.dart). Écris d'abord le test qui échoue (skill /tdd)." >&2
     exit 2 ;;

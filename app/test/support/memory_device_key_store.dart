@@ -1,4 +1,4 @@
-import 'package:note_de_frais/data/device_key_store.dart';
+import 'package:note_de_frais/account/data/device_key_store.dart';
 
 /// Double du stockage sécurisé de la clé d'appareil : compte les lectures de la clé.
 final class MemoryDeviceKeyStore implements DeviceKeyStore {

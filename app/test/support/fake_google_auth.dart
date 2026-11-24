@@ -1,4 +1,4 @@
-import 'package:note_de_frais/data/google_auth.dart';
+import 'package:note_de_frais/account/data/google_auth.dart';
 
 /// Double du compte Google de l'appareil : rend un jeton d'identité, ou `null` (annulation).
 final class FakeGoogleAuth implements GoogleAuth {

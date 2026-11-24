@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Écran natif avant le démarrage de Flutter : même bleu encre que la page de chargement
-     (lib/ui/launch_screen.dart), avec le ticket du logo au centre. -->
+     (lib/shell/launch_screen.dart), avec le ticket du logo au centre. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/ic_launcher_background" />
     <item>

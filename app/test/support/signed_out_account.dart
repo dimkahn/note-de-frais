@@ -1,7 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:note_de_frais/data/account_repository.dart';
-import 'package:note_de_frais/data/local_store.dart';
+import 'package:note_de_frais/account/data/account_repository.dart';
+import 'package:note_de_frais/shared/data/local_store.dart';
 
 import 'fake_biometric_auth.dart';
 import 'memory_device_key_store.dart';

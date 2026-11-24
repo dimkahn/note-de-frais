@@ -1,5 +1,5 @@
-import 'package:note_de_frais/data/session_store.dart';
-import 'package:note_de_frais/domain/account.dart';
+import 'package:note_de_frais/account/data/session_store.dart';
+import 'package:note_de_frais/account/domain/account.dart';
 
 /// Double du stockage sécurisé : la session reste en mémoire.
 final class MemorySessionStore implements SessionStore {
