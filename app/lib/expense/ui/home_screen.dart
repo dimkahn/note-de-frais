@@ -5,7 +5,6 @@ import '../data/expense_repository.dart';
 import '../domain/category_breakdown.dart';
 import '../domain/expense.dart';
 import '../domain/expense_query.dart';
-import '../../scan/ui/capture.dart';
 import 'category_style.dart';
 import 'expense_detail_screen.dart';
 import 'expense_tile.dart';
@@ -39,11 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _shown = ids;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => scanReceipt(context, repo),
-        icon: const Icon(Icons.document_scanner_outlined),
-        label: const Text('Scanner'),
-      ),
       body: RefreshIndicator(
         onRefresh: repo.sync,
         child: CustomScrollView(
@@ -548,7 +542,8 @@ class _EmptyState extends StatelessWidget {
           if (!filtered) ...[
             const SizedBox(height: 8),
             const Text(
-              'Il est recadré et lu automatiquement : vous n\'avez plus qu\'à vérifier.',
+              'Touchez Scanner : il est recadré et lu automatiquement, '
+              'vous n\'avez plus qu\'à vérifier.',
               textAlign: TextAlign.center,
             ),
           ],

@@ -22,7 +22,7 @@ travaille) : responsabilité, invariants propres, frontières, tests.
 | Documents multi-pages | `document/` (+ `web/`) | `document/` |
 | Traitement d'image, lecture du ticket | `receipt/` (`imaging/`, `extraction/`) | `scan/` (caméra, recadrage, OCR) |
 | Export PDF / photos | — | `export/` |
-| Transverse | `storage/`, `web/` (erreurs HTTP), `config/` | `shared/`, `shell/` (navigation) |
+| Transverse | `storage/`, `web/` (erreurs HTTP), `config/` | `shared/`, `shell/` (navigation, bouton Scanner) |
 
 ## Commandes
 - Tout (racine) : `mvn verify` — tests serveur, `flutter analyze` + `flutter test`, APK release

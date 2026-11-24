@@ -107,7 +107,7 @@ void main() {
       find.text('Photographiez votre premier justificatif'),
       findsOneWidget,
     );
-    expect(find.text('Scanner'), findsOneWidget);
+    expect(find.textContaining('Touchez Scanner'), findsOneWidget);
   });
 
   testWidgets('liste les dépenses avec le total', (tester) async {

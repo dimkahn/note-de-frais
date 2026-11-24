@@ -7,35 +7,140 @@ import '../../document/data/document_repository.dart';
 import '../../expense/data/expense_repository.dart';
 import '../../document/domain/document.dart';
 import '../../expense/domain/expense.dart';
+
+import 'package:provider/provider.dart';
+
+import '../domain/scan_session.dart';
 import 'adjust_screen.dart';
 import 'camera_screen.dart';
+import 'review_screen.dart';
 
-/// Parcours d'ajout : scanner (mobile) ou image existante (desktop), ajustement, enregistrement local.
-Future<Expense?> scanReceipt(
-  BuildContext context,
-  ExpenseRepository repo,
-) async {
-  final mobile = Platform.isAndroid || Platform.isIOS;
-  final ScanResult? scan;
-  if (mobile) {
-    final scans = await Navigator.push<List<ScanResult>>(
+/// Scan jusqu'à la revue : caméra sur mobile (mode choisi dans la visée, sauf [modeLocked]),
+/// fichiers sur ordinateur. `null` si l'utilisateur abandonne.
+Future<ScanCompleted?> scan(
+  BuildContext context, {
+  ScanMode mode = ScanMode.ticket,
+  bool modeLocked = false,
+}) async {
+  if (Platform.isAndroid || Platform.isIOS) {
+    return Navigator.push<ScanCompleted>(
       context,
-      MaterialPageRoute(builder: (_) => const CameraScreen()),
-    );
-    scan = (scans == null || scans.isEmpty) ? null : scans.first;
-  } else {
-    final photo = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      requestFullMetadata: false,
-    );
-    if (photo == null || !context.mounted) return null;
-    scan = await Navigator.push<ScanResult>(
-      context,
-      MaterialPageRoute(builder: (_) => AdjustScreen(photoPath: photo.path)),
+      MaterialPageRoute(
+        builder: (_) => CameraScreen(initialMode: mode, modeLocked: modeLocked),
+      ),
     );
   }
-  if (scan == null) return null;
+  final chosen = modeLocked ? mode : await _chooseMode(context, mode);
+  if (chosen == null || !context.mounted) return null;
+  return _scanFiles(context, chosen);
+}
 
+/// Sans caméra, le mode se choisit avant de prendre les fichiers.
+Future<ScanMode?> _chooseMode(BuildContext context, ScanMode current) =>
+    showModalBottomSheet<ScanMode>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final m in ScanMode.values)
+              ListTile(
+                leading: Icon(
+                  m == ScanMode.ticket
+                      ? Icons.receipt_long_outlined
+                      : Icons.layers_outlined,
+                ),
+                title: Text(m.label),
+                subtitle: Text(
+                  m == ScanMode.ticket
+                      ? 'Une image, une dépense'
+                      : 'Plusieurs pages, un document',
+                ),
+                selected: m == current,
+                onTap: () => Navigator.pop(context, m),
+              ),
+          ],
+        ),
+      ),
+    );
+
+/// Fichiers puis revue, autant de fois que l'utilisateur ajoute des pages.
+Future<ScanCompleted?> _scanFiles(BuildContext context, ScanMode mode) async {
+  var session = ScanSession(mode);
+  final picker = ImagePicker();
+  while (context.mounted) {
+    if (session.canAdd) {
+      final photos = mode == ScanMode.document
+          ? await picker.pickMultiImage(requestFullMetadata: false)
+          : [
+              ?await picker.pickImage(
+                source: ImageSource.gallery,
+                requestFullMetadata: false,
+              ),
+            ];
+      for (final photo in photos) {
+        if (session.canAdd) {
+          session = session.withPage(CapturedPage(photoPath: photo.path));
+        }
+      }
+    }
+    if (session.pages.isEmpty || !context.mounted) return null;
+    final outcome = await Navigator.push<ReviewOutcome>(
+      context,
+      MaterialPageRoute(builder: (_) => ReviewScreen(session: session)),
+    );
+    switch (outcome) {
+      case ReviewSaved(:final pages):
+        return ScanCompleted(mode, pages);
+      case ReviewContinue(session: final remaining) when remaining.canAdd:
+        session = remaining;
+      case _:
+        return null; // retour sur un ticket déjà pris : abandon
+    }
+  }
+  return null;
+}
+
+/// Ce que le scan a créé.
+sealed class SavedScan {
+  const SavedScan();
+}
+
+final class SavedExpense extends SavedScan {
+  const SavedExpense(this.expense);
+
+  final Expense expense;
+}
+
+final class SavedDocument extends SavedScan {
+  const SavedDocument(this.document);
+
+  final ScannedDocument document;
+}
+
+/// Bouton Scanner : scan dans [mode] (modifiable dans la visée), puis enregistrement local
+/// d'une dépense (ticket) ou d'un nouveau document.
+Future<SavedScan?> scanAndSave(BuildContext context, ScanMode mode) async {
+  final done = await scan(context, mode: mode);
+  if (done == null || done.pages.isEmpty || !context.mounted) return null;
+  final expenses = context.read<ExpenseRepository>();
+  final documents = context.read<DocumentRepository>();
+  final messenger = ScaffoldMessenger.of(context);
+  return switch (done.mode) {
+    ScanMode.ticket => SavedExpense(
+      await _saveReceipt(expenses, messenger, done.pages.single),
+    ),
+    ScanMode.document => SavedDocument(
+      await documents.create(_captures(done.pages)),
+    ),
+  };
+}
+
+Future<Expense> _saveReceipt(
+  ExpenseRepository repo,
+  ScaffoldMessengerState messenger,
+  ScanResult scan,
+) async {
   final expense = await repo.captureScan(
     scan.photoPath,
     scan.quad,
@@ -43,15 +148,12 @@ Future<Expense?> scanReceipt(
     processedJpeg: scan.processedJpeg,
     rotation: scan.rotation,
   );
-  if (context.mounted) {
-    final message = !repo.withServer
-        ? 'Enregistré sur l\'appareil'
-        : (repo.lastReport?.offline ?? true)
-        ? 'Enregistré sur l\'appareil, envoi dès que possible'
-        : 'Envoyé pour extraction';
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
+  final message = !repo.withServer
+      ? 'Enregistré sur l\'appareil'
+      : (repo.lastReport?.offline ?? true)
+      ? 'Enregistré sur l\'appareil, envoi dès que possible'
+      : 'Envoyé pour extraction';
+  messenger.showSnackBar(SnackBar(content: Text(message)));
   return expense;
 }
 
@@ -91,45 +193,23 @@ Future<void> readjustReceipt(
   );
 }
 
-/// Scan de plusieurs pages pour un document : caméra en mode multi-pages (mobile), ou plusieurs
-/// images ajustées une à une (desktop). Liste vide si l'utilisateur abandonne.
+/// Pages ajoutées à un document existant : scan en mode Document imposé.
+/// Liste vide si l'utilisateur abandonne.
 Future<List<PageCapture>> scanPages(BuildContext context) async {
-  final mobile = Platform.isAndroid || Platform.isIOS;
-  final scans = <ScanResult>[];
-  if (mobile) {
-    scans.addAll(
-      await Navigator.push<List<ScanResult>>(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const CameraScreen(multiPage: true),
-            ),
-          ) ??
-          const [],
-    );
-  } else {
-    final photos = await ImagePicker().pickMultiImage(
-      requestFullMetadata: false,
-    );
-    for (final photo in photos) {
-      if (!context.mounted) break;
-      final scan = await Navigator.push<ScanResult>(
-        context,
-        MaterialPageRoute(builder: (_) => AdjustScreen(photoPath: photo.path)),
-      );
-      if (scan != null) scans.add(scan);
-    }
-  }
-  return [
-    for (final s in scans)
-      PageCapture(
-        photoPath: s.photoPath,
-        corners: s.quad,
-        filter: s.filter,
-        rotation: s.rotation,
-        processedJpeg: s.processedJpeg,
-      ),
-  ];
+  final done = await scan(context, mode: ScanMode.document, modeLocked: true);
+  return done == null ? const [] : _captures(done.pages);
 }
+
+List<PageCapture> _captures(List<ScanResult> scans) => [
+  for (final s in scans)
+    PageCapture(
+      photoPath: s.photoPath,
+      corners: s.quad,
+      filter: s.filter,
+      rotation: s.rotation,
+      processedJpeg: s.processedJpeg,
+    ),
+];
 
 /// Choix fait sur l'écran d'ajustement d'une page de document.
 sealed class PageAdjustment {

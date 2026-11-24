@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 
 import '../data/document_repository.dart';
 import '../domain/document.dart';
-import '../../scan/ui/capture.dart';
 import 'document_screen.dart';
 import '../../shared/ui/format.dart';
 
@@ -18,11 +17,6 @@ class DocumentsScreen extends StatelessWidget {
     final repo = context.watch<DocumentRepository>();
     final documents = repo.documents;
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _newDocument(context, repo),
-        icon: const Icon(Icons.note_add_outlined),
-        label: const Text('Nouveau document'),
-      ),
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -55,16 +49,6 @@ class DocumentsScreen extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  Future<void> _newDocument(
-    BuildContext context,
-    DocumentRepository repo,
-  ) async {
-    final pages = await scanPages(context);
-    if (pages.isEmpty || !context.mounted) return;
-    final doc = await repo.create(pages);
-    if (context.mounted) _open(context, doc.id);
   }
 
   void _open(BuildContext context, String id) => Navigator.push(
@@ -189,7 +173,7 @@ class _EmptyDocuments extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             'Contrats, attestations, factures de plusieurs pages : '
-            'scannez toutes les pages à la suite, puis partagez-les en PDF.',
+            'touchez Scanner, enchaînez les pages, puis partagez-les en PDF.',
             textAlign: TextAlign.center,
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,

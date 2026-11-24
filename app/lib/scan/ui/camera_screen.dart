@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -6,18 +7,37 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../domain/quad.dart';
+import '../domain/scan_session.dart';
 import '../domain/stability.dart';
 import 'adjust_screen.dart';
 import 'corner_editor.dart';
+import 'review_screen.dart';
 import '../data/document_scanner.dart';
 
-/// Caméra de scan : contour du document en direct, déclenchement automatique quand le cadrage
-/// est stable, puis écran d'ajustement. Renvoie la liste des [ScanResult] validés (vide si abandon).
-/// En mode [multiPage], la caméra reste ouverte après chaque page jusqu'à « Terminer ».
-class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key, this.multiPage = false});
+/// Scan terminé : le mode choisi et les pages validées, rendues sur l'appareil.
+final class ScanCompleted {
+  const ScanCompleted(this.mode, this.pages);
 
-  final bool multiPage;
+  final ScanMode mode;
+  final List<ScanResult> pages;
+}
+
+/// Caméra de scan : contour du document en direct, déclenchement automatique quand le cadrage
+/// est stable. En mode Ticket, la prise ouvre la revue ; en mode Document, les pages s'empilent
+/// dans le coin jusqu'à ce qu'on touche la pile. Renvoie [ScanCompleted], ou `null` si abandon.
+class CameraScreen extends StatefulWidget {
+  const CameraScreen({
+    super.key,
+    this.initialMode = ScanMode.ticket,
+    this.modeLocked = false,
+    this.compute = inIsolate,
+  });
+
+  final ScanMode initialMode;
+
+  /// Mode imposé par l'appelant (ex. ajout de pages à un document) : pas de carrousel.
+  final bool modeLocked;
+  final Compute compute;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -29,7 +49,7 @@ class _CameraScreenState extends State<CameraScreen>
   String? _error;
   Quad? _liveQuad;
   bool _detectionFailed = false;
-  final _pages = <ScanResult>[];
+  late ScanSession _session = ScanSession(widget.initialMode);
   final _tracker = StabilityTracker();
   bool _autoCapture = true;
   bool _analyzing = false;
@@ -165,7 +185,7 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       await controller.stopImageStream();
       final photo = await controller.takePicture();
-      await _adjust(photo.path, _liveQuad);
+      await _add([CapturedPage(photoPath: photo.path, hint: _liveQuad)]);
     } on CameraException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -182,45 +202,84 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
+  /// Images existantes : une pour un ticket, plusieurs pour un document ; puis la revue.
   Future<void> _pickFromGallery() async {
-    final photo = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      requestFullMetadata: false,
-    );
-    if (photo != null) await _adjust(photo.path, null);
+    final picker = ImagePicker();
+    final photos = _session.mode == ScanMode.document
+        ? await picker.pickMultiImage(requestFullMetadata: false)
+        : [
+            ?await picker.pickImage(
+              source: ImageSource.gallery,
+              requestFullMetadata: false,
+            ),
+          ];
+    if (photos.isEmpty) return;
+    await _add([for (final p in photos) CapturedPage(photoPath: p.path)]);
+    if (_session.pages.isNotEmpty) await _review();
   }
 
-  /// L'écran d'ajustement redétecte sur la photo pleine définition ; le contour en direct sert de repli.
-  Future<void> _adjust(String photoPath, Quad? liveQuad) async {
+  /// Ajoute les pages prises ; un ticket part aussitôt en revue, un document s'empile.
+  Future<void> _add(List<CapturedPage> pages) async {
     if (!mounted) return;
-    final result = await Navigator.push<ScanResult>(
+    var session = _session;
+    for (final page in pages) {
+      if (!session.canAdd) break;
+      session = session.withPage(page);
+    }
+    setState(() => _session = session);
+    HapticFeedback.lightImpact();
+    if (_session.mode == ScanMode.ticket) await _review();
+  }
+
+  /// Revue des pages prises : enregistrer termine le scan, sinon on revient à la visée.
+  Future<void> _review() async {
+    final outcome = await Navigator.push<ReviewOutcome>(
       context,
       MaterialPageRoute(
         builder: (_) =>
-            AdjustScreen(photoPath: photoPath, fallbackQuad: liveQuad),
+            ReviewScreen(session: _session, compute: widget.compute),
       ),
     );
-    if (result == null || !mounted) return;
-    if (!widget.multiPage) {
-      Navigator.pop(context, [result]);
-      return;
+    if (!mounted) return;
+    switch (outcome) {
+      case ReviewSaved(:final pages):
+        Navigator.pop(context, ScanCompleted(_session.mode, pages));
+      case ReviewContinue(:final session):
+        setState(() => _session = session);
+      case null:
+        break;
     }
-    setState(() => _pages.add(result));
-    HapticFeedback.lightImpact();
   }
 
-  void _finish() => Navigator.pop(context, List.of(_pages));
+  void _setMode(ScanMode mode) => setState(() {
+    _session = _session.withMode(mode);
+    _tracker.reset();
+  });
+
+  /// Pendant la revue, la détection en direct est inutile : on coupe le flux.
+  Future<void> _openReview() async {
+    final controller = _controller;
+    if (controller != null && controller.value.isStreamingImages) {
+      await controller.stopImageStream();
+    }
+    await _review();
+    final current = _controller;
+    if (mounted && current != null && !current.value.isStreamingImages) {
+      _tracker.reset();
+      await current.startImageStream(_onFrame);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
     // Vert vif : bien visible sur l'aperçu caméra, quel que soit le fond.
     const color = Colors.greenAccent;
-    // En multi-pages, revenir en arrière garde les pages déjà validées.
+    // Avec des pages prises, revenir en arrière ouvre leur revue plutôt que de les perdre.
     return PopScope(
-      canPop: _pages.isEmpty,
+      canPop: _session.pages.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _finish();
+        if (!didPop) _openReview();
       },
       child: _scaffold(context, controller, color),
     );
@@ -237,9 +296,9 @@ class _CameraScreenState extends State<CameraScreen>
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(
-          widget.multiPage
-              ? 'Page ${_pages.length + 1}'
-              : 'Scanner un justificatif',
+          _session.mode == ScanMode.document
+              ? 'Page ${_session.pages.length + 1}'
+              : 'Scanner un ticket',
         ),
         actions: [
           IconButton(
@@ -267,7 +326,18 @@ class _CameraScreenState extends State<CameraScreen>
         ],
       ),
       body: _error != null
-          ? _CameraError(message: _error!, onGallery: _pickFromGallery)
+          ? Column(
+              children: [
+                Expanded(
+                  child: _CameraError(
+                    message: _error!,
+                    onGallery: _pickFromGallery,
+                  ),
+                ),
+                _modeSelector(),
+                const SizedBox(height: 24),
+              ],
+            )
           : controller == null
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -305,18 +375,26 @@ class _CameraScreenState extends State<CameraScreen>
                   found: _liveQuad != null,
                   auto: _autoCapture,
                   failed: _detectionFailed,
+                  mode: _session.mode,
                 ),
+                _modeSelector(),
                 _ShutterBar(
                   busy: _capturing,
                   onShutter: _capture,
                   onGallery: _pickFromGallery,
-                  pages: _pages.length,
-                  onFinish: _finish,
+                  pages: [for (final p in _session.pages) p.photoPath],
+                  onReview: _openReview,
                 ),
               ],
             ),
     );
   }
+
+  /// Le mode se choisit avant la première prise, sauf s'il est imposé.
+  Widget _modeSelector() => ScanModeSelector(
+    mode: _session.mode,
+    onChanged: widget.modeLocked || _session.pages.isNotEmpty ? null : _setMode,
+  );
 
   Future<void> _toggleFlash() async {
     final next = _flash == FlashMode.torch ? FlashMode.off : FlashMode.torch;
@@ -326,11 +404,17 @@ class _CameraScreenState extends State<CameraScreen>
 }
 
 class _Hint extends StatelessWidget {
-  const _Hint({required this.found, required this.auto, required this.failed});
+  const _Hint({
+    required this.found,
+    required this.auto,
+    required this.failed,
+    required this.mode,
+  });
 
   final bool found;
   final bool auto;
   final bool failed;
+  final ScanMode mode;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -339,7 +423,9 @@ class _Hint extends StatelessWidget {
       failed
           ? 'Détection automatique indisponible — cadrez puis appuyez'
           : !found
-          ? 'Placez le justificatif sur un fond contrasté'
+          ? mode == ScanMode.ticket
+                ? 'Placez le ticket sur un fond contrasté'
+                : 'Placez la page sur un fond contrasté'
           : auto
           ? 'Ne bougez plus… capture automatique'
           : 'Document détecté — appuyez pour capturer',
@@ -355,16 +441,16 @@ class _ShutterBar extends StatelessWidget {
     required this.onShutter,
     required this.onGallery,
     required this.pages,
-    required this.onFinish,
+    required this.onReview,
   });
 
   final bool busy;
   final VoidCallback onShutter;
   final VoidCallback onGallery;
 
-  /// Pages déjà validées (mode multi-pages).
-  final int pages;
-  final VoidCallback onFinish;
+  /// Photos des pages déjà prises (mode Document).
+  final List<String> pages;
+  final VoidCallback onReview;
 
   @override
   Widget build(BuildContext context) => SafeArea(
@@ -403,14 +489,10 @@ class _ShutterBar extends StatelessWidget {
               ),
             ),
           ),
-          if (pages > 0)
-            FilledButton(
-              onPressed: busy ? null : onFinish,
-              style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-              child: Text('Terminer ($pages)'),
-            )
+          if (pages.isNotEmpty)
+            PageStack(photoPaths: pages, onTap: busy ? () {} : onReview)
           else
-            const SizedBox(width: 48),
+            const SizedBox(width: 64),
         ],
       ),
     ),
@@ -449,6 +531,191 @@ class _CameraError extends StatelessWidget {
           ),
         ],
       ),
+    ),
+  );
+}
+
+/// Choix du mode sous la visée : toucher ou glisser. Sans [onChanged], le mode est imposé.
+class ScanModeSelector extends StatelessWidget {
+  const ScanModeSelector({super.key, required this.mode, this.onChanged});
+
+  final ScanMode mode;
+  final ValueChanged<ScanMode>? onChanged;
+
+  @override
+  Widget build(BuildContext context) =>
+      _ModeCarousel(mode: mode, onChanged: onChanged);
+}
+
+class _ModeCarousel extends StatefulWidget {
+  const _ModeCarousel({required this.mode, required this.onChanged});
+
+  final ScanMode mode;
+  final ValueChanged<ScanMode>? onChanged;
+
+  @override
+  State<_ModeCarousel> createState() => _ModeCarouselState();
+}
+
+class _ModeCarouselState extends State<_ModeCarousel> {
+  double _dragged = 0;
+
+  /// Glisser vers la gauche passe au mode suivant, vers la droite au précédent.
+  void _onDragEnd(DragEndDetails _) {
+    final onChanged = widget.onChanged;
+    final step = _dragged < -40 ? 1 : (_dragged > 40 ? -1 : 0);
+    _dragged = 0;
+    final next = widget.mode.index + step;
+    if (onChanged == null || step == 0) return;
+    if (next < 0 || next >= ScanMode.values.length) return;
+    onChanged(ScanMode.values[next]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onChanged = widget.onChanged;
+    final modes = onChanged == null ? [widget.mode] : ScanMode.values;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: (d) => _dragged += d.delta.dx,
+      onHorizontalDragEnd: _onDragEnd,
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            for (final m in modes)
+              _ModeLabel(
+                label: m.label,
+                selected: m == widget.mode,
+                onTap: onChanged == null || m == widget.mode
+                    ? null
+                    : () => onChanged(m),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeLabel extends StatelessWidget {
+  const _ModeLabel({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: onTap != null,
+    selected: selected,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.black : Colors.white70,
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Pages déjà prises, empilées dans le coin, avec leur nombre ; toucher ouvre la revue.
+class PageStack extends StatelessWidget {
+  const PageStack({super.key, required this.photoPaths, required this.onTap});
+
+  final List<String> photoPaths;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = photoPaths.length;
+    final shown = photoPaths.length > 2
+        ? photoPaths.sublist(photoPaths.length - 2)
+        : photoPaths;
+    return Semantics(
+      button: true,
+      label:
+          '$count page${count > 1 ? 's' : ''} prise${count > 1 ? 's' : ''}, revoir',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: SizedBox(
+          width: 72,
+          height: 80,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              // Les feuilles du dessous dépassent un peu, comme une pile de papier.
+              for (final (i, path) in shown.indexed)
+                Positioned(
+                  left: (shown.length - 1 - i) * 6.0,
+                  top: (shown.length - 1 - i) * 4.0,
+                  child: _Sheet(path: path),
+                ),
+              Positioned(
+                right: 0,
+                top: -6,
+                child: CircleAvatar(
+                  radius: 13,
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  child: Text(
+                    '$count',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Sheet extends StatelessWidget {
+  const _Sheet({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 56,
+    height: 72,
+    decoration: BoxDecoration(
+      color: Colors.white24,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: Colors.white, width: 2),
+    ),
+    clipBehavior: Clip.antiAlias,
+    child: Image.file(
+      File(path),
+      fit: BoxFit.cover,
+      cacheWidth: 160,
+      errorBuilder: (_, _, _) => const SizedBox(),
     ),
   );
 }

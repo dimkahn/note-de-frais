@@ -112,7 +112,7 @@ void main() {
     await pump(tester);
 
     expect(find.text('Aucun document'), findsOneWidget);
-    expect(find.text('Nouveau document'), findsOneWidget);
+    expect(find.textContaining('touchez Scanner'), findsOneWidget);
   });
 
   testWidgets('liste les documents avec leur nombre de pages', (tester) async {
