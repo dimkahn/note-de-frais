@@ -10,14 +10,15 @@ import '../../expense/domain/expense.dart';
 
 import 'package:provider/provider.dart';
 
+import '../data/mlkit_page_scanner.dart';
 import '../domain/page_scanner.dart';
 import '../domain/scan_session.dart';
 import 'adjust_screen.dart';
 import 'camera_screen.dart';
 import 'review_screen.dart';
 
-/// Scan jusqu'à la revue : scanner système ([pageScanner], ML Kit sur Android), sinon caméra
-/// maison sur mobile (mode choisi dans la visée, sauf [modeLocked]), fichiers sur ordinateur.
+/// Scan jusqu'à la revue : scanner système ([pageScanner], ML Kit par défaut sur Android), sinon
+/// caméra maison sur mobile (mode choisi dans la visée, sauf [modeLocked]), fichiers sur ordinateur.
 /// `null` si l'utilisateur abandonne.
 Future<ScanCompleted?> scan(
   BuildContext context, {
@@ -26,19 +27,19 @@ Future<ScanCompleted?> scan(
   PageScanner? pageScanner,
   Compute compute = inIsolate,
 }) async {
-  if (pageScanner == null && (Platform.isAndroid || Platform.isIOS)) {
+  final scanner =
+      pageScanner ?? (Platform.isAndroid ? const MlKitPageScanner() : null);
+  if (scanner == null && (Platform.isAndroid || Platform.isIOS)) {
     return _camera(context, mode, modeLocked: modeLocked);
   }
   final chosen = modeLocked ? mode : await _chooseMode(context, mode);
   if (chosen == null || !context.mounted) return null;
-  if (pageScanner == null) {
-    return _scanFrom(context, chosen, _pickFiles, compute);
-  }
+  if (scanner == null) return _scanFrom(context, chosen, _pickFiles, compute);
   try {
     return await _scanFrom(
       context,
       chosen,
-      (mode) => _fromScanner(pageScanner, mode),
+      (mode) => _fromScanner(scanner, mode),
       compute,
     );
   } on PageScannerUnavailable catch (e) {
