@@ -21,7 +21,7 @@ class OpenCvImageProcessorTest {
     void recadre_un_ticket_photographie_de_travers_sur_fond_sombre() throws IOException {
         byte[] photo = photoOfReceipt(1200, 1600, 500, 900, 12);
 
-        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -41,7 +41,7 @@ class OpenCvImageProcessorTest {
         g.fillOval(1050 - 330, 700 - 520, 660, 1040);
         g.dispose();
 
-        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -57,7 +57,7 @@ class OpenCvImageProcessorTest {
             photo = in.readAllBytes();
         }
 
-        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -80,7 +80,7 @@ class OpenCvImageProcessorTest {
         }
         g.dispose();
 
-        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -93,7 +93,7 @@ class OpenCvImageProcessorTest {
         byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
                 new Color(215, 190, 150), new Color(245, 242, 238));
 
-        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -106,7 +106,7 @@ class OpenCvImageProcessorTest {
         byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4,
                 new Color(216, 214, 212), new Color(247, 246, 245));
 
-        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
@@ -119,7 +119,7 @@ class OpenCvImageProcessorTest {
         Color table = new Color(216, 214, 212);
         byte[] photo = photoOnLightBackground(1000, 1400, 520, 900, 4, table, table);
 
-        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(photo, ImageFilter.NONE, null, Rotation.NONE);
 
         assertThat(result.cropped()).isFalse();
     }
@@ -128,7 +128,7 @@ class OpenCvImageProcessorTest {
     void ne_recadre_pas_quand_aucun_document_n_est_detecte() throws IOException {
         byte[] uniform = encode(filled(800, 600, new Color(200, 200, 200)));
 
-        ProcessedImage result = processor.process(uniform, ImageFilter.NONE, null);
+        ProcessedImage result = processor.process(uniform, ImageFilter.NONE, null, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isFalse();
@@ -141,7 +141,7 @@ class OpenCvImageProcessorTest {
     void chaque_filtre_produit_un_jpeg_valide(ImageFilter filter) throws IOException {
         byte[] photo = photoOfReceipt(900, 1200, 400, 700, -8);
 
-        ProcessedImage result = processor.process(photo, filter, null);
+        ProcessedImage result = processor.process(photo, filter, null, Rotation.NONE);
 
         assertThat(decode(result.jpeg())).isNotNull();
     }
@@ -150,8 +150,8 @@ class OpenCvImageProcessorTest {
     void le_filtre_netteté_augmente_le_contraste_local() throws IOException {
         byte[] photo = photoOfReceipt(900, 1200, 400, 700, 0);
 
-        double plain = sharpness(processor.process(photo, ImageFilter.NONE, null).jpeg());
-        double enhanced = sharpness(processor.process(photo, ImageFilter.ENHANCE, null).jpeg());
+        double plain = sharpness(processor.process(photo, ImageFilter.NONE, null, Rotation.NONE).jpeg());
+        double enhanced = sharpness(processor.process(photo, ImageFilter.ENHANCE, null, Rotation.NONE).jpeg());
 
         assertThat(enhanced).isGreaterThan(plain);
     }
@@ -160,7 +160,7 @@ class OpenCvImageProcessorTest {
     void le_mode_scan_produit_une_image_quasi_binaire() throws IOException {
         byte[] photo = photoOfReceipt(900, 1200, 400, 700, 5);
 
-        BufferedImage out = decode(processor.process(photo, ImageFilter.SCAN_BW, null).jpeg());
+        BufferedImage out = decode(processor.process(photo, ImageFilter.SCAN_BW, null, Rotation.NONE).jpeg());
 
         long extremes = 0, total = 0;
         for (int y = 0; y < out.getHeight(); y += 4) {
@@ -178,11 +178,30 @@ class OpenCvImageProcessorTest {
         byte[] uniform = encode(filled(1000, 800, new Color(200, 200, 200)));
         Quad quarter = Quad.parse("0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75");
 
-        ProcessedImage result = processor.process(uniform, ImageFilter.NONE, quarter);
+        ProcessedImage result = processor.process(uniform, ImageFilter.NONE, quarter, Rotation.NONE);
 
         BufferedImage out = decode(result.jpeg());
         assertThat(result.cropped()).isTrue();
         assertThat(out.getWidth()).isBetween(495, 505);
         assertThat(out.getHeight()).isBetween(395, 405);
+    }
+
+    @Test
+    void pivote_le_rendu_d_un_quart_de_tour_horaire_apres_recadrage() throws IOException {
+        BufferedImage img = filled(1000, 800, new Color(200, 200, 200));
+        var g = img.createGraphics();
+        g.setColor(Color.BLACK);
+        g.fillRect(250, 200, 100, 100); // coin haut-gauche de la zone recadrée
+        g.dispose();
+        Quad quarter = Quad.parse("0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75");
+
+        ProcessedImage result = processor.process(encode(img), ImageFilter.NONE, quarter, Rotation.CLOCKWISE_90);
+
+        BufferedImage out = decode(result.jpeg());
+        assertThat(out.getWidth()).isBetween(395, 405);
+        assertThat(out.getHeight()).isBetween(495, 505);
+        // Après un quart de tour horaire, l'ancien coin haut-gauche est en haut à droite.
+        assertThat(new Color(out.getRGB(out.getWidth() - 20, 20)).getRed()).isLessThan(60);
+        assertThat(new Color(out.getRGB(20, 20)).getRed()).isGreaterThan(150);
     }
 }

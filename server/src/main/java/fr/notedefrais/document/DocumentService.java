@@ -3,6 +3,7 @@ package fr.notedefrais.document;
 import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
 import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
 import fr.notedefrais.storage.ImageTypes;
@@ -72,7 +73,7 @@ public class DocumentService {
         String original = storage.saveOriginal(page.id(), page.original(), ImageTypes.extensionOf(page.originalContentType()));
         var added = new DocumentPage(page.id(), documentId, ownerId, original, page.originalContentType(),
                 page.original().length);
-        render(added, page.processed(), page.filter(), page.corners());
+        render(added, page.processed(), page.filter(), page.corners(), page.rotation());
         added.setRemoved(!document.lists(page.id()));
         return savePageOf(document, added);
     }
@@ -80,10 +81,10 @@ public class DocumentService {
     /** Remplace le rendu d'une page réajustée sur l'appareil ; l'original ne change pas. */
     @Transactional
     public DocumentPage replaceRender(UUID ownerId, UUID documentId, UUID pageId, byte[] processed,
-                                      ImageFilter filter, Quad corners) {
+                                      ImageFilter filter, Quad corners, Rotation rotation) {
         Document document = owned(ownerId, documentId);
         DocumentPage page = visiblePage(document, pageId);
-        render(page, processed, filter, corners);
+        render(page, processed, filter, corners, rotation);
         return savePageOf(document, page);
     }
 
@@ -120,9 +121,9 @@ public class DocumentService {
         return storage.read(pageId, page(ownerId, documentId, pageId).getProcessedFile());
     }
 
-    private void render(DocumentPage page, byte[] processed, ImageFilter filter, Quad corners) {
+    private void render(DocumentPage page, byte[] processed, ImageFilter filter, Quad corners, Rotation rotation) {
         page.render(storage.saveProcessed(page.getId(), processed), processed.length,
-                filter, corners == null ? null : corners.format());
+                filter, corners == null ? null : corners.format(), rotation);
     }
 
     private DocumentPage savePageOf(Document document, DocumentPage page) {

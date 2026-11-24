@@ -5,6 +5,8 @@ Contrepartie app : `app/lib/document/`. Conception : `docs/design/documents.md`,
 
 - `Document` (titre, pages ordonnées, `deleted`), `DocumentPage` (original + rendu calculé sur l'appareil),
   `DocumentService` (avec son propre `FileStorage`), `DocumentContent` = document + pages visibles.
+- Filtre, coins et rotation d'une page sont des métadonnées (rendu fait sur l'appareil), gardées pour
+  réajuster la page depuis un autre appareil.
 - `document/web/` : `/api/documents/**` ; l'appareil envoie l'original **et** le rendu de chaque page.
 
 Invariants propres

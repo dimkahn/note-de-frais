@@ -4,7 +4,8 @@ package fr.notedefrais.receipt.imaging;
 public interface ImageProcessor {
 
     /**
-     * @param corners contour choisi par l'utilisateur ; {@code null} = détection automatique
+     * @param corners  contour choisi par l'utilisateur ; {@code null} = détection automatique
+     * @param rotation quart de tour horaire appliqué au résultat
      */
-    ProcessedImage process(byte[] original, ImageFilter filter, Quad corners);
+    ProcessedImage process(byte[] original, ImageFilter filter, Quad corners, Rotation rotation);
 }

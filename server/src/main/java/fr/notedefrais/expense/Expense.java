@@ -1,7 +1,9 @@
 package fr.notedefrais.expense;
 
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
 import jakarta.persistence.*;
+import org.hibernate.annotations.ColumnDefault;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -50,8 +52,12 @@ public class Expense {
     @Enumerated(EnumType.STRING)
     private ImageFilter filter = ImageFilter.ENHANCE;
     private boolean cropped;
-    /** Contour choisi sur l'appareil ({@link fr.notedefrais.imaging.Quad#format()}) ; null = détection auto. */
+    /** Contour choisi sur l'appareil ({@link fr.notedefrais.receipt.imaging.Quad#format()}) ; null = détection auto. */
     private String corners;
+    /** Quart de tour horaire du rendu, en degrés. Défaut en base : les dépenses existantes ne sont pas pivotées. */
+    @ColumnDefault("0")
+    @Column(nullable = false)
+    private int rotation;
     /** Place occupée en ligne (original + rendu) ; null pour les dépenses antérieures aux quotas. */
     private Long sizeBytes;
 
@@ -123,9 +129,10 @@ public class Expense {
         processingError = error == null ? null : error.substring(0, Math.min(error.length(), 2000));
     }
 
-    public void resetProcessing(ImageFilter newFilter, String newCorners) {
+    public void resetProcessing(ImageFilter newFilter, String newCorners, Rotation newRotation) {
         if (newFilter != null) filter = newFilter;
         if (newCorners != null) corners = newCorners;
+        if (newRotation != null) rotation = newRotation.degrees();
         status = ProcessingStatus.PENDING;
         processingError = null;
     }
@@ -186,6 +193,9 @@ public class Expense {
     public void setFilter(ImageFilter filter) { this.filter = filter; }
     public boolean isCropped() { return cropped; }
     public String getCorners() { return corners; }
+
+    public Rotation getRotation() { return Rotation.ofDegrees(rotation); }
+    public void setRotation(Rotation rotation) { this.rotation = rotation.degrees(); }
     public void setCorners(String corners) { this.corners = corners; }
     public void setCropped(boolean cropped) { this.cropped = cropped; }
     public Long getSizeBytes() { return sizeBytes; }

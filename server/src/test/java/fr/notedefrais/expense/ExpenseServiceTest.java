@@ -14,6 +14,7 @@ import fr.notedefrais.receipt.extraction.ReceiptExtractor;
 import fr.notedefrais.receipt.extraction.ReceiptFields;
 import fr.notedefrais.receipt.imaging.ImageProcessingException;
 import fr.notedefrais.receipt.imaging.ImageProcessor;
+import fr.notedefrais.receipt.imaging.Rotation;
 import fr.notedefrais.receipt.imaging.ProcessedImage;
 import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.LocalFileStorage;
@@ -77,7 +78,7 @@ class ExpenseServiceTest {
     void l_enregistrement_conserve_l_original_et_planifie_le_traitement() {
         var id = UUID.randomUUID();
 
-        Expense e = service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        Expense e = service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, null);
 
         assertThat(e.getStatus()).isEqualTo(ProcessingStatus.PENDING);
         assertThat(storage.read(id, e.getOriginalFile())).containsExactly(PHOTO);
@@ -87,9 +88,9 @@ class ExpenseServiceTest {
     @Test
     void l_enregistrement_est_idempotent_et_ne_touche_pas_l_original() {
         var id = UUID.randomUUID();
-        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, null);
 
-        Expense again = service.register(OWNER, id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null);
+        Expense again = service.register(OWNER, id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null, null);
 
         assertThat(storage.read(id, again.getOriginalFile())).containsExactly(PHOTO);
         assertThat(again.getFilter()).isEqualTo(ImageFilter.ENHANCE);
@@ -154,7 +155,7 @@ class ExpenseServiceTest {
         service.update(OWNER, id, new ExpenseUpdate("Bistrot Corrigé", Category.RESTAURANT, LocalDate.of(2026, 3, 10),
                 new BigDecimal("45.00"), null, "EUR", "Paris", "FR", null, "CB", "Repas équipe"));
 
-        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null, null);
         processor.process(id);
 
         Expense e = repository.findById(id).orElseThrow();
@@ -169,10 +170,10 @@ class ExpenseServiceTest {
     void les_coins_choisis_a_la_capture_sont_conserves_et_reutilises() {
         var id = UUID.randomUUID();
         var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
-        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, quad);
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, quad, null);
 
         processor.process(id);
-        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null, null);
         processor.process(id);
 
         assertThat(repository.findById(id).orElseThrow().getCorners()).isEqualTo(quad.format());
@@ -184,13 +185,50 @@ class ExpenseServiceTest {
         var id = register();
         var quad = Quad.parse("0.2,0.2,0.8,0.2,0.8,0.8,0.2,0.8");
 
-        service.reprocess(OWNER, id, null, quad);
+        service.reprocess(OWNER, id, null, quad, null);
         processor.process(id);
 
         Expense e = repository.findById(id).orElseThrow();
         assertThat(e.getCorners()).isEqualTo(quad.format());
         assertThat(e.getFilter()).isEqualTo(ImageFilter.ENHANCE);
         assertThat(imageProcessor.corners).containsExactly(quad);
+    }
+
+    @Test
+    void la_rotation_choisie_a_la_capture_est_conservee_et_appliquee() {
+        var id = UUID.randomUUID();
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, Rotation.CLOCKWISE_90);
+
+        processor.process(id);
+
+        assertThat(repository.findById(id).orElseThrow().getRotation()).isEqualTo(Rotation.CLOCKWISE_90);
+        assertThat(imageProcessor.rotations).containsExactly(Rotation.CLOCKWISE_90);
+    }
+
+    @Test
+    void sans_rotation_a_la_capture_le_rendu_n_est_pas_pivote() {
+        var id = register();
+
+        processor.process(id);
+
+        assertThat(repository.findById(id).orElseThrow().getRotation()).isEqualTo(Rotation.NONE);
+        assertThat(imageProcessor.rotations).containsExactly(Rotation.NONE);
+    }
+
+    @Test
+    void une_nouvelle_rotation_au_retraitement_remplace_la_precedente_sinon_elle_est_gardee() {
+        var id = UUID.randomUUID();
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, Rotation.CLOCKWISE_90);
+        processor.process(id);
+
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null, null);
+        processor.process(id);
+        service.reprocess(OWNER, id, null, null, Rotation.CLOCKWISE_180);
+        processor.process(id);
+
+        assertThat(imageProcessor.rotations)
+                .containsExactly(Rotation.CLOCKWISE_90, Rotation.CLOCKWISE_90, Rotation.CLOCKWISE_180);
+        assertThat(repository.findById(id).orElseThrow().getRotation()).isEqualTo(Rotation.CLOCKWISE_180);
     }
 
     @Test
@@ -234,7 +272,7 @@ class ExpenseServiceTest {
         var edit = new ExpenseUpdate("Pirate", null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> service.update(STRANGER, id, edit)).isInstanceOf(ExpenseNotFoundException.class);
-        assertThatThrownBy(() -> service.reprocess(STRANGER, id, ImageFilter.NONE, null))
+        assertThatThrownBy(() -> service.reprocess(STRANGER, id, ImageFilter.NONE, null, null))
                 .isInstanceOf(ExpenseNotFoundException.class);
         assertThat(repository.findById(id)).get().extracting(Expense::getMerchant).isNull();
     }
@@ -251,7 +289,7 @@ class ExpenseServiceTest {
     void la_recherche_et_les_changements_ne_renvoient_que_les_depenses_du_compte() {
         Instant before = Instant.now().minusSeconds(1);
         var mine = register();
-        service.register(STRANGER, UUID.randomUUID(), PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        service.register(STRANGER, UUID.randomUUID(), PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, null);
         var all = new ExpenseSpecs.Criteria(null, null, null, null, null, null, null);
 
         assertThat(service.search(OWNER, all)).extracting(Expense::getId).containsExactly(mine);
@@ -264,7 +302,7 @@ class ExpenseServiceTest {
     void un_identifiant_deja_pris_par_un_autre_compte_est_refuse_sans_toucher_a_sa_depense() {
         var id = register();
 
-        assertThatThrownBy(() -> service.register(STRANGER, id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null))
+        assertThatThrownBy(() -> service.register(STRANGER, id, new byte[]{1}, "image/jpeg", ImageFilter.NONE, null, null))
                 .isInstanceOf(ExpenseNotFoundException.class);
         Expense e = repository.findById(id).orElseThrow();
         assertThat(e.getOwnerId()).isEqualTo(OWNER);
@@ -306,7 +344,7 @@ class ExpenseServiceTest {
         processor.process(id);
         imageProcessor.output = new byte[]{1, 2, 3, 4, 5};
 
-        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null, null);
         processor.process(id);
 
         assertThat(quota.usedBytes(OWNER)).isEqualTo(PHOTO.length + 5);
@@ -316,7 +354,7 @@ class ExpenseServiceTest {
     void l_usage_d_un_compte_ne_compte_ni_ses_depenses_supprimees_ni_celles_des_autres() {
         var deleted = register();
         register();
-        service.register(STRANGER, UUID.randomUUID(), new byte[100], "image/jpeg", ImageFilter.ENHANCE, null);
+        service.register(STRANGER, UUID.randomUUID(), new byte[100], "image/jpeg", ImageFilter.ENHANCE, null, null);
 
         service.delete(OWNER, deleted);
 
@@ -335,7 +373,7 @@ class ExpenseServiceTest {
         var id = UUID.randomUUID();
 
         var refused = catchThrowableOfType(QuotaExceededException.class,
-                () -> service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null));
+                () -> service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, null));
 
         assertThat(refused.usedBytes()).isEqualTo(PHOTO.length);
         assertThat(refused.quotaBytes()).isEqualTo(PHOTO.length + 2);
@@ -359,7 +397,7 @@ class ExpenseServiceTest {
         limits = new PlanLimits(PHOTO.length, false);
         var id = register();
 
-        Expense again = service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        Expense again = service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, null);
 
         assertThat(again.getId()).isEqualTo(id);
     }
@@ -384,7 +422,7 @@ class ExpenseServiceTest {
         processor.process(id);
         limits = FREE;
 
-        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null);
+        service.reprocess(OWNER, id, ImageFilter.SCAN_BW, null, null);
         processor.process(id);
 
         Expense e = repository.findById(id).orElseThrow();
@@ -434,7 +472,7 @@ class ExpenseServiceTest {
 
     private UUID register() {
         var id = UUID.randomUUID();
-        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null);
+        service.register(OWNER, id, PHOTO, "image/jpeg", ImageFilter.ENHANCE, null, null);
         return id;
     }
 
@@ -454,14 +492,16 @@ class ExpenseServiceTest {
         final List<byte[]> inputs = new ArrayList<>();
         final List<ImageFilter> filters = new ArrayList<>();
         final List<Quad> corners = new ArrayList<>();
+        final List<Rotation> rotations = new ArrayList<>();
         ImageProcessingException failure;
         byte[] output = PROCESSED;
 
         @Override
-        public ProcessedImage process(byte[] original, ImageFilter filter, Quad quad) {
+        public ProcessedImage process(byte[] original, ImageFilter filter, Quad quad, Rotation rotation) {
             inputs.add(original);
             filters.add(filter);
             corners.add(quad);
+            rotations.add(rotation);
             if (failure != null) throw failure;
             return new ProcessedImage(output, true);
         }

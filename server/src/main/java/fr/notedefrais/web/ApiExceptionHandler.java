@@ -13,6 +13,7 @@ import fr.notedefrais.document.DocumentNotFoundException;
 import fr.notedefrais.expense.ExpenseNotFoundException;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.receipt.imaging.InvalidQuadException;
+import fr.notedefrais.receipt.imaging.InvalidRotationException;
 import fr.notedefrais.storage.OriginalAlreadyExistsException;
 import fr.notedefrais.storage.StorageException;
 import org.slf4j.Logger;
@@ -60,6 +61,11 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(InvalidQuadException.class)
     ProblemDetail invalidCorners(InvalidQuadException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(InvalidRotationException.class)
+    ProblemDetail invalidRotation(InvalidRotationException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 

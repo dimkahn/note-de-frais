@@ -34,11 +34,13 @@ public class ExpenseController {
                                              @RequestParam("file") MultipartFile file,
                                              @RequestParam(required = false) UUID id,
                                              @RequestParam(required = false) ImageFilter filter,
-                                             @RequestParam(required = false) String corners) throws IOException {
+                                             @RequestParam(required = false) String corners,
+                                             @RequestParam(required = false) Integer rotation) throws IOException {
         String type = ImageUploads.requireImage(file);
 
         UUID expenseId = id == null ? UUID.randomUUID() : id;
-        Expense expense = service.register(ownerId, expenseId, file.getBytes(), type, filter, ImageUploads.parseCorners(corners));
+        Expense expense = service.register(ownerId, expenseId, file.getBytes(), type, filter, ImageUploads.parseCorners(corners),
+                ImageUploads.parseRotation(rotation));
         return ResponseEntity.accepted()
                 .location(URI.create("/api/expenses/" + expenseId))
                 .body(ExpenseDto.of(expense));
@@ -89,8 +91,10 @@ public class ExpenseController {
     public ResponseEntity<ExpenseDto> reprocess(@RequestAttribute(SessionAuthenticationFilter.ACCOUNT_ID) UUID ownerId,
                                                 @PathVariable UUID id,
                                                 @RequestParam(required = false) ImageFilter filter,
-                                                @RequestParam(required = false) String corners) {
-        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(ownerId, id, filter, ImageUploads.parseCorners(corners))));
+                                                @RequestParam(required = false) String corners,
+                                                @RequestParam(required = false) Integer rotation) {
+        return ResponseEntity.accepted().body(ExpenseDto.of(service.reprocess(ownerId, id, filter, ImageUploads.parseCorners(corners),
+                ImageUploads.parseRotation(rotation))));
     }
 
     @DeleteMapping("/{id}")

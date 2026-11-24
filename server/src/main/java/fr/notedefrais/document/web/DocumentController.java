@@ -63,10 +63,12 @@ public class DocumentController {
                                     @RequestParam MultipartFile original,
                                     @RequestParam MultipartFile processed,
                                     @RequestParam ImageFilter filter,
-                                    @RequestParam(required = false) String corners) throws IOException {
+                                    @RequestParam(required = false) String corners,
+                                    @RequestParam(required = false) Integer rotation) throws IOException {
         String originalType = ImageUploads.requireImage(original);
         byte[] render = ImageUploads.requireJpeg(processed);
-        var page = new NewPage(pageId, original.getBytes(), originalType, render, filter, ImageUploads.parseCorners(corners));
+        var page = new NewPage(pageId, original.getBytes(), originalType, render, filter, ImageUploads.parseCorners(corners),
+                ImageUploads.parseRotation(rotation));
         return DocumentDto.Page.of(service.addPage(ownerId, id, page));
     }
 
@@ -76,10 +78,11 @@ public class DocumentController {
                                           @PathVariable UUID id, @PathVariable UUID pageId,
                                           @RequestParam MultipartFile processed,
                                           @RequestParam ImageFilter filter,
-                                          @RequestParam(required = false) String corners) throws IOException {
+                                          @RequestParam(required = false) String corners,
+                                          @RequestParam(required = false) Integer rotation) throws IOException {
         byte[] render = ImageUploads.requireJpeg(processed);
         return DocumentDto.Page.of(service.replaceRender(ownerId, id, pageId, render, filter,
-                ImageUploads.parseCorners(corners)));
+                ImageUploads.parseCorners(corners), ImageUploads.parseRotation(rotation)));
     }
 
     @GetMapping("/{id}/pages/{pageId}/original")

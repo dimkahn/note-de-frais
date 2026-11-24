@@ -62,7 +62,7 @@ public class ExpenseProcessor {
         try {
             byte[] original = storage.read(id, expense.getOriginalFile());
             Quad corners = expense.getCorners() == null ? null : Quad.parse(expense.getCorners());
-            ProcessedImage image = imageProcessor.process(original, expense.getFilter(), corners);
+            ProcessedImage image = imageProcessor.process(original, expense.getFilter(), corners, expense.getRotation());
             String file = storage.saveProcessed(id, image.jpeg());
             return new Rendering(image, file, (long) original.length + image.jpeg().length);
         } catch (RuntimeException e) {

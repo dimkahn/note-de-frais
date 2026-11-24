@@ -54,7 +54,7 @@ public final class OpenCvImageProcessor implements ImageProcessor {
     private static final int MAX_OUTPUT_SIDE = 2400;
 
     @Override
-    public ProcessedImage process(byte[] original, ImageFilter filter, Quad corners) {
+    public ProcessedImage process(byte[] original, ImageFilter filter, Quad corners, Rotation rotation) {
         Mat src = Imgcodecs.imdecode(new MatOfByte(original), Imgcodecs.IMREAD_COLOR);
         if (src.empty()) {
             throw new ImageProcessingException("Image illisible ou format non supporté");
@@ -66,8 +66,20 @@ public final class OpenCvImageProcessor implements ImageProcessor {
             Mat doc = quad.map(c -> scope.add(warp(src, c))).orElse(src);
             Mat resized = scope.add(limitSize(doc));
             Mat filtered = scope.add(applyFilter(resized, filter, scope));
-            return new ProcessedImage(encodeJpeg(filtered), quad.isPresent());
+            Mat rotated = scope.add(rotate(filtered, rotation));
+            return new ProcessedImage(encodeJpeg(rotated), quad.isPresent());
         }
+    }
+
+    private static Mat rotate(Mat src, Rotation rotation) {
+        Mat dst = new Mat();
+        switch (rotation) {
+            case NONE -> src.copyTo(dst);
+            case CLOCKWISE_90 -> Core.rotate(src, dst, Core.ROTATE_90_CLOCKWISE);
+            case CLOCKWISE_180 -> Core.rotate(src, dst, Core.ROTATE_180);
+            case CLOCKWISE_270 -> Core.rotate(src, dst, Core.ROTATE_90_COUNTERCLOCKWISE);
+        }
+        return dst;
     }
 
     private static Point[] toPoints(Quad quad, Mat src) {

@@ -3,7 +3,7 @@
 Contrepartie app : `app/lib/scan/` (même pipeline exécuté sur l'appareil, hors-ligne).
 
 - `imaging/` : `ImageProcessor` (interface métier) et `OpenCvImageProcessor` (orientation EXIF → contour
-  imposé ou détecté → perspective → filtre). `Quad` = 4 coins normalisés 0..1 (HG, HD, BD, BG).
+  imposé ou détecté → perspective → filtre → `Rotation`, quart de tour horaire). `Quad` = 4 coins normalisés 0..1 (HG, HD, BD, BG).
   `ImageFilter` (filtres de netteté) est utilisé aussi par `expense` et `document`.
   Les paramètres sont alignés sur `app/lib/scan/data/document_scanner.dart` : modifier les deux ensemble.
 - `extraction/` : `ReceiptExtractor` (interface), `ClaudeReceiptExtractor` (seul usage du SDK Anthropic,

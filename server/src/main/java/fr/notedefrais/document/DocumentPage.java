@@ -1,6 +1,8 @@
 package fr.notedefrais.document;
 
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
+import org.hibernate.annotations.ColumnDefault;
 import jakarta.persistence.*;
 import java.util.UUID;
 
@@ -22,8 +24,12 @@ public class DocumentPage {
     private String processedFile;
     @Enumerated(EnumType.STRING)
     private ImageFilter filter;
-    /** Contour choisi sur l'appareil ({@link fr.notedefrais.imaging.Quad#format()}). */
+    /** Contour choisi sur l'appareil ({@link fr.notedefrais.receipt.imaging.Quad#format()}). */
     private String corners;
+    /** Quart de tour horaire du rendu calculé sur l'appareil, en degrés (pour le réajuster ailleurs). */
+    @ColumnDefault("0")
+    @Column(nullable = false)
+    private int rotation;
     /** Place occupée en ligne (original + rendu courant). */
     private long sizeBytes;
     /** 1 au premier envoi, +1 à chaque nouveau rendu : l'appareil sait quand le retélécharger. */
@@ -45,11 +51,13 @@ public class DocumentPage {
     }
 
     /** Nouveau rendu (premier ou suivant) ; l'original ne change pas. */
-    public void render(String fileName, long processedSizeBytes, ImageFilter newFilter, String newCorners) {
+    public void render(String fileName, long processedSizeBytes, ImageFilter newFilter, String newCorners,
+                       Rotation newRotation) {
         processedFile = fileName;
         sizeBytes = originalSizeBytes + processedSizeBytes;
         filter = newFilter;
         corners = newCorners;
+        rotation = (newRotation == null ? Rotation.NONE : newRotation).degrees();
         renderVersion++;
     }
 
@@ -66,6 +74,7 @@ public class DocumentPage {
     public String getProcessedFile() { return processedFile; }
     public ImageFilter getFilter() { return filter; }
     public String getCorners() { return corners; }
+    public Rotation getRotation() { return Rotation.ofDegrees(rotation); }
     public long getSizeBytes() { return sizeBytes; }
     public int getRenderVersion() { return renderVersion; }
     public boolean isRemoved() { return removed; }

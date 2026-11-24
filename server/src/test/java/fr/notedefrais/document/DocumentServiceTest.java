@@ -9,6 +9,7 @@ import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseRepository;
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
 import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.LocalFileStorage;
 import java.nio.file.Path;
@@ -118,7 +119,7 @@ class DocumentServiceTest {
         service.addPage(OWNER, id, page(pageId));
 
         DocumentPage again = service.addPage(OWNER, id,
-                new NewPage(pageId, new byte[]{1}, "image/jpeg", new byte[]{2}, ImageFilter.NONE, null));
+                new NewPage(pageId, new byte[]{1}, "image/jpeg", new byte[]{2}, ImageFilter.NONE, null, Rotation.NONE));
 
         assertThat(again.getRenderVersion()).isEqualTo(1);
         assertThat(service.original(OWNER, id, pageId)).containsExactly(PHOTO);
@@ -179,7 +180,7 @@ class DocumentServiceTest {
         service.addPage(OWNER, id, page(pageId));
         Quad tighter = Quad.parse("0.2,0.2,0.8,0.2,0.8,0.8,0.2,0.8");
 
-        DocumentPage adjusted = service.replaceRender(OWNER, id, pageId, new byte[]{5, 5, 5, 5}, ImageFilter.SHARPEN, tighter);
+        DocumentPage adjusted = service.replaceRender(OWNER, id, pageId, new byte[]{5, 5, 5, 5}, ImageFilter.SHARPEN, tighter, Rotation.NONE);
 
         assertThat(adjusted.getRenderVersion()).isEqualTo(2);
         assertThat(adjusted.getFilter()).isEqualTo(ImageFilter.SHARPEN);
@@ -187,6 +188,21 @@ class DocumentServiceTest {
         assertThat(service.processed(OWNER, id, pageId)).containsExactly(5, 5, 5, 5);
         assertThat(service.original(OWNER, id, pageId)).containsExactly(PHOTO);
         assertThat(quota.usedBytes(OWNER)).isEqualTo(PHOTO.length + 4);
+    }
+
+    @Test
+    void la_rotation_d_une_page_est_enregistree_puis_remplacee_par_un_nouveau_rendu() {
+        var id = UUID.randomUUID();
+        var pageId = UUID.randomUUID();
+        service.save(OWNER, id, "Contrat", List.of(pageId));
+
+        DocumentPage added = service.addPage(OWNER, id,
+                new NewPage(pageId, PHOTO, "image/jpeg", RENDER, ImageFilter.NONE, null, Rotation.CLOCKWISE_90));
+        DocumentPage adjusted = service.replaceRender(OWNER, id, pageId, RENDER, ImageFilter.NONE, null,
+                Rotation.CLOCKWISE_180);
+
+        assertThat(added.getRotation()).isEqualTo(Rotation.CLOCKWISE_90);
+        assertThat(adjusted.getRotation()).isEqualTo(Rotation.CLOCKWISE_180);
     }
 
     @Test
@@ -300,7 +316,7 @@ class DocumentServiceTest {
         service.addPage(OWNER, id, page(pageId));
         limits = new PlanLimits(1, false);
 
-        DocumentPage adjusted = service.replaceRender(OWNER, id, pageId, new byte[10], ImageFilter.NONE, null);
+        DocumentPage adjusted = service.replaceRender(OWNER, id, pageId, new byte[10], ImageFilter.NONE, null, Rotation.NONE);
 
         assertThat(adjusted.getRenderVersion()).isEqualTo(2);
     }
@@ -313,15 +329,15 @@ class DocumentServiceTest {
         service.addPage(OWNER, id, page(removed));
         service.save(OWNER, id, "Contrat", List.of());
 
-        assertThatThrownBy(() -> service.replaceRender(OWNER, id, removed, RENDER, ImageFilter.NONE, null))
+        assertThatThrownBy(() -> service.replaceRender(OWNER, id, removed, RENDER, ImageFilter.NONE, null, Rotation.NONE))
                 .isInstanceOf(DocumentNotFoundException.class);
-        assertThatThrownBy(() -> service.replaceRender(STRANGER, id, removed, RENDER, ImageFilter.NONE, null))
+        assertThatThrownBy(() -> service.replaceRender(STRANGER, id, removed, RENDER, ImageFilter.NONE, null, Rotation.NONE))
                 .isInstanceOf(DocumentNotFoundException.class);
-        assertThatThrownBy(() -> service.replaceRender(OWNER, id, UUID.randomUUID(), RENDER, ImageFilter.NONE, null))
+        assertThatThrownBy(() -> service.replaceRender(OWNER, id, UUID.randomUUID(), RENDER, ImageFilter.NONE, null, Rotation.NONE))
                 .isInstanceOf(DocumentNotFoundException.class);
     }
 
     private static NewPage page(UUID id) {
-        return new NewPage(id, PHOTO, "image/jpeg", RENDER, ImageFilter.SCAN_BW, CORNERS);
+        return new NewPage(id, PHOTO, "image/jpeg", RENDER, ImageFilter.SCAN_BW, CORNERS, Rotation.NONE);
     }
 }

@@ -1,6 +1,7 @@
 package fr.notedefrais.expense.web;
 
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -53,7 +54,7 @@ class ExpenseControllerTest {
     @Test
     void l_envoi_d_un_justificatif_repond_202_avec_la_depense_en_attente() throws Exception {
         var id = UUID.randomUUID();
-        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW), eq(null))).willReturn(new Expense(id));
+        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), eq(ImageFilter.SCAN_BW), eq(null), any())).willReturn(new Expense(id));
 
         mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1, 2}))
@@ -67,7 +68,7 @@ class ExpenseControllerTest {
 
     @Test
     void un_envoi_au_dela_du_quota_repond_403_avec_l_usage_et_le_quota() throws Exception {
-        given(service.register(eq(OWNER), any(), any(), any(), any(), any()))
+        given(service.register(eq(OWNER), any(), any(), any(), any(), any(), any()))
                 .willThrow(new QuotaExceededException(104_000_000L, 104_857_600L));
 
         mvc.perform(multipart("/api/expenses").with(SESSION)
@@ -82,13 +83,48 @@ class ExpenseControllerTest {
     void transmet_les_coins_choisis_sur_l_appareil() throws Exception {
         var id = UUID.randomUUID();
         var quad = Quad.parse("0.1,0.1,0.9,0.1,0.9,0.9,0.1,0.9");
-        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), any(), eq(quad))).willReturn(new Expense(id));
+        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), any(), eq(quad), any())).willReturn(new Expense(id));
 
         mvc.perform(multipart("/api/expenses").with(SESSION)
                         .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
                         .param("id", id.toString())
                         .param("corners", quad.format()))
                 .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void transmet_la_rotation_choisie_sur_l_appareil_et_la_renvoie() throws Exception {
+        var id = UUID.randomUUID();
+        var expense = new Expense(id);
+        expense.setRotation(Rotation.CLOCKWISE_90);
+        given(service.register(eq(OWNER), eq(id), any(), eq("image/jpeg"), any(), any(), eq(Rotation.CLOCKWISE_90)))
+                .willReturn(expense);
+
+        mvc.perform(multipart("/api/expenses").with(SESSION)
+                        .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
+                        .param("id", id.toString())
+                        .param("rotation", "90"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.rotation").value(90));
+    }
+
+    @Test
+    void refuse_une_rotation_qui_n_est_pas_un_quart_de_tour() throws Exception {
+        mvc.perform(multipart("/api/expenses").with(SESSION)
+                        .file(new MockMultipartFile("file", "ticket.jpg", "image/jpeg", new byte[]{1}))
+                        .param("rotation", "45"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void le_retraitement_transmet_une_nouvelle_rotation() throws Exception {
+        var id = UUID.randomUUID();
+        given(service.reprocess(eq(OWNER), eq(id), any(), any(), eq(Rotation.CLOCKWISE_270))).willReturn(new Expense(id));
+
+        mvc.perform(post("/api/expenses/" + id + "/reprocess").with(SESSION).param("rotation", "270"))
+                .andExpect(status().isAccepted());
+
+        verify(service).reprocess(eq(OWNER), eq(id), any(), any(), eq(Rotation.CLOCKWISE_270));
     }
 
     @Test

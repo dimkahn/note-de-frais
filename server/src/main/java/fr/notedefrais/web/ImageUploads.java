@@ -1,6 +1,7 @@
 package fr.notedefrais.web;
 
 import fr.notedefrais.receipt.imaging.Quad;
+import fr.notedefrais.receipt.imaging.Rotation;
 import java.io.IOException;
 import java.util.Locale;
 import java.util.Set;
@@ -31,5 +32,10 @@ public final class ImageUploads {
 
     public static Quad parseCorners(String corners) {
         return corners == null || corners.isBlank() ? null : Quad.parse(corners);
+    }
+
+    /** Rotation en degrés horaires ; {@code null} = non précisée. */
+    public static Rotation parseRotation(Integer degrees) {
+        return degrees == null ? null : Rotation.ofDegrees(degrees);
     }
 }

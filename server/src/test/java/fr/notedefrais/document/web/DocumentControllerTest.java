@@ -16,6 +16,7 @@ import fr.notedefrais.document.DocumentNotFoundException;
 import fr.notedefrais.document.DocumentPage;
 import fr.notedefrais.document.DocumentService;
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
 import fr.notedefrais.receipt.imaging.Quad;
 import java.time.Instant;
 import java.util.Arrays;
@@ -107,6 +108,33 @@ class DocumentControllerTest {
     }
 
     @Test
+    void la_rotation_d_une_page_est_transmise_et_renvoyee() throws Exception {
+        var rotated = new DocumentPage(PAGE, DOC, OWNER, "original.png", "image/png", 1);
+        rotated.render("processed.jpg", 1, ImageFilter.SCAN_BW, CORNERS.format(), Rotation.CLOCKWISE_270);
+        given(service.addPage(eq(OWNER), eq(DOC), any())).willReturn(rotated);
+
+        mvc.perform(pageUpload("image/png", "image/jpeg").param("pageId", PAGE.toString()).param("rotation", "270"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rotation").value(270));
+
+        verify(service).addPage(eq(OWNER), eq(DOC), argThat(p -> p.rotation() == Rotation.CLOCKWISE_270));
+    }
+
+    @Test
+    void un_nouveau_rendu_transmet_sa_rotation() throws Exception {
+        given(service.replaceRender(eq(OWNER), eq(DOC), eq(PAGE), any(), any(), any(), eq(Rotation.CLOCKWISE_90)))
+                .willReturn(page());
+
+        mvc.perform(multipart("/api/documents/{id}/pages/{pageId}/processed", DOC, PAGE).with(SESSION)
+                        .file(new MockMultipartFile("processed", "rendu.jpg", "image/jpeg", new byte[]{3}))
+                        .param("filter", "NONE")
+                        .param("rotation", "90"))
+                .andExpect(status().isOk());
+
+        verify(service).replaceRender(eq(OWNER), eq(DOC), eq(PAGE), any(), any(), any(), eq(Rotation.CLOCKWISE_90));
+    }
+
+    @Test
     void refuse_une_page_sans_identifiant_ni_filtre_ou_dont_les_fichiers_ne_sont_pas_des_images() throws Exception {
         mvc.perform(pageUpload("image/jpeg", "image/jpeg")).andExpect(status().isBadRequest());
         mvc.perform(pageUpload("application/pdf", "image/jpeg").param("pageId", PAGE.toString()))
@@ -132,7 +160,7 @@ class DocumentControllerTest {
 
     @Test
     void un_nouveau_rendu_remplace_celui_de_la_page() throws Exception {
-        given(service.replaceRender(eq(OWNER), eq(DOC), eq(PAGE), any(), eq(ImageFilter.SHARPEN), eq(CORNERS)))
+        given(service.replaceRender(eq(OWNER), eq(DOC), eq(PAGE), any(), eq(ImageFilter.SHARPEN), eq(CORNERS), any()))
                 .willReturn(page());
 
         mvc.perform(multipart("/api/documents/{id}/pages/{pageId}/processed", DOC, PAGE).with(SESSION)
@@ -192,7 +220,7 @@ class DocumentControllerTest {
 
     private static DocumentPage page() {
         var page = new DocumentPage(PAGE, DOC, OWNER, "original.png", "image/png", 1);
-        page.render("processed.jpg", 1, ImageFilter.SCAN_BW, CORNERS.format());
+        page.render("processed.jpg", 1, ImageFilter.SCAN_BW, CORNERS.format(), Rotation.NONE);
         return page;
     }
 }

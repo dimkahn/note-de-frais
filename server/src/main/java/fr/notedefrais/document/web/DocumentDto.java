@@ -17,9 +17,9 @@ public record DocumentDto(UUID id, String title, List<Page> pages, boolean delet
     /** Titre et ordre complet des pages voulus par l'appareil. */
     public record Update(@NotBlank @Size(max = 200) String title, @NotNull @Size(max = 500) List<@NotNull UUID> pageIds) {}
 
-    public record Page(UUID id, ImageFilter filter, String corners, int renderVersion) {
+    public record Page(UUID id, ImageFilter filter, String corners, int rotation, int renderVersion) {
         static Page of(DocumentPage p) {
-            return new Page(p.getId(), p.getFilter(), p.getCorners(), p.getRenderVersion());
+            return new Page(p.getId(), p.getFilter(), p.getCorners(), p.getRotation().degrees(), p.getRenderVersion());
         }
     }
 

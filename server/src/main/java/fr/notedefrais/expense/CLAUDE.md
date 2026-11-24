@@ -8,6 +8,8 @@ Contrepartie app : `app/lib/expense/`.
 - `ExpenseProcessor` + `ProcessingQueue` (`AsyncProcessingQueue`, threads virtuels) : recadrage + filtre
   via `receipt/imaging`, puis extraction via `receipt/extraction` si l'offre inclut l'analyse IA
   (`AccountLimits`). L'upload répond avant le traitement.
+- Rendu paramétré par filtre, coins et `Rotation` (stockée en degrés, défaut 0 en base) ; `null` au
+  re-traitement = inchangé. API : `rotation` en degrés (0/90/180/270, sinon 400).
 - `ProcessingStatus` : PENDING → DONE | EXTRACTION_FAILED | NOT_INCLUDED | FAILED.
 - `expense/web/` : `/api/expenses/**` (multipart à la création, `/changes?since=`, `/reprocess`,
   `/original`, `/processed`).

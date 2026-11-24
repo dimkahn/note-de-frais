@@ -1,6 +1,7 @@
 package fr.notedefrais.expense;
 
 import fr.notedefrais.receipt.imaging.ImageFilter;
+import fr.notedefrais.receipt.imaging.Rotation;
 import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
@@ -44,7 +45,8 @@ public class ExpenseService {
      *
      * @throws QuotaExceededException si l'original ferait dépasser l'espace de l'offre (rien n'est stocké)
      */
-    public Expense register(UUID ownerId, UUID id, byte[] original, String contentType, ImageFilter filter, Quad corners) {
+    public Expense register(UUID ownerId, UUID id, byte[] original, String contentType, ImageFilter filter, Quad corners,
+                            Rotation rotation) {
         var existing = repository.findById(id);
         if (existing.isPresent()) {
             if (!existing.get().isOwnedBy(ownerId)) throw new ExpenseNotFoundException(id);
@@ -59,6 +61,7 @@ public class ExpenseService {
         expense.setOriginalContentType(contentType);
         expense.setFilter(filter == null ? ImageFilter.ENHANCE : filter);
         expense.setCorners(corners == null ? null : corners.format());
+        expense.setRotation(rotation == null ? Rotation.NONE : rotation);
         Expense saved = repository.save(expense);
         queue.submit(id);
         return saved;
@@ -110,10 +113,10 @@ public class ExpenseService {
         return repository.save(expense);
     }
 
-    /** Relance le traitement depuis l'original (autre filtre et/ou autres coins ; null = inchangé). */
-    public Expense reprocess(UUID ownerId, UUID id, ImageFilter filter, Quad corners) {
+    /** Relance le traitement depuis l'original (autre filtre, coins et/ou rotation ; null = inchangé). */
+    public Expense reprocess(UUID ownerId, UUID id, ImageFilter filter, Quad corners, Rotation rotation) {
         Expense expense = get(ownerId, id);
-        expense.resetProcessing(filter, corners == null ? null : corners.format());
+        expense.resetProcessing(filter, corners == null ? null : corners.format(), rotation);
         Expense saved = repository.save(expense);
         queue.submit(id);
         return saved;
