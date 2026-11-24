@@ -6,7 +6,8 @@ Contrepartie serveur : `server/…/expense/`. Conception : `docs/design/lecture-
   (montants en texte décimal, additionnés en centimes, jamais en `double`).
 - `data/` : `ExpenseRepository` (point d'entrée de l'UI, écrit d'abord en local), `ExpenseApi`
   (`/api/expenses`), `SyncService` (pousse les changements locaux puis récupère `/changes`).
-- `ui/` : onglet Dépenses (`home_screen`), fiche (`expense_detail_screen`), tuile, `ReceiptImage`, `TicketCard`.
+- `ui/` : onglet Dépenses (`home_screen`), fiche (`expense_detail_screen`), tuile,
+  `status_badge.dart` (statut affiché : envoi, analyse, à vérifier / compléter), `ReceiptImage`, `TicketCard`.
 
 Invariants propres
 - Hors-ligne d'abord : toute action passe par `LocalStore` ; la synchro est rejouable et idempotente (UUID client).

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../domain/expense.dart';
 import '../../shared/ui/format.dart';
+import 'status_badge.dart';
 import 'receipt_image.dart';
 import '../../shared/ui/theme.dart';
 

@@ -7,6 +7,7 @@ import '../domain/money.dart';
 import '../../scan/ui/capture.dart';
 import '../../export/ui/export_button.dart';
 import '../../shared/ui/format.dart';
+import 'status_badge.dart';
 import 'receipt_image.dart';
 
 class ExpenseDetailScreen extends StatelessWidget {
