@@ -19,7 +19,5 @@ Invariants propres
 - Pas d'appel Claude dans une transaction ouverte : le traitement se fait hors transaction.
 - Montants `BigDecimal` + devise ; jamais de somme entre devises.
 
-Note : `ImageFilter` vit ici mais sert aussi à `document` et `receipt/imaging`.
-
 Tests : `ExpenseServiceTest`, `ExpenseSpecsTest`, `ExpenseSummaryTest`, `expense/web/ExpenseControllerTest`,
 `ExpenseFlowTest` (bout en bout, `ReceiptExtractor` remplacé par un double).

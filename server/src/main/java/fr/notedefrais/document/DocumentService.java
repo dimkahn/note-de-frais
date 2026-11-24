@@ -2,7 +2,7 @@ package fr.notedefrais.document;
 
 import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
 import fr.notedefrais.storage.ImageTypes;

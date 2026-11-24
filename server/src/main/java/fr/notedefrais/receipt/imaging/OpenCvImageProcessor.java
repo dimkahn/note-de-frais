@@ -1,6 +1,5 @@
 package fr.notedefrais.receipt.imaging;
 
-import fr.notedefrais.expense.ImageFilter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;

@@ -1,4 +1,4 @@
-package fr.notedefrais.expense;
+package fr.notedefrais.receipt.imaging;
 
 /** Filtre de netteté appliqué après recadrage. L'original n'est jamais modifié. */
 public enum ImageFilter {

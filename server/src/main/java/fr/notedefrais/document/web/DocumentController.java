@@ -5,7 +5,7 @@ import fr.notedefrais.web.ImageUploads;
 
 import fr.notedefrais.document.DocumentService;
 import fr.notedefrais.document.NewPage;
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.receipt.imaging.Quad;
 import jakarta.validation.Valid;
 import java.io.IOException;

@@ -2,7 +2,7 @@ package fr.notedefrais.document.web;
 
 import fr.notedefrais.document.DocumentContent;
 import fr.notedefrais.document.DocumentPage;
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;

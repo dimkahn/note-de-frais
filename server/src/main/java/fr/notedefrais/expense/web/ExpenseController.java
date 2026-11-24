@@ -1,5 +1,6 @@
 package fr.notedefrais.expense.web;
 
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.account.web.SessionAuthenticationFilter;
 import fr.notedefrais.web.ImageUploads;
 

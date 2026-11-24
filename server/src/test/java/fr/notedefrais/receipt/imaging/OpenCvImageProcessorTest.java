@@ -2,7 +2,6 @@ package fr.notedefrais.receipt.imaging;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import fr.notedefrais.expense.ImageFilter;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.IOException;

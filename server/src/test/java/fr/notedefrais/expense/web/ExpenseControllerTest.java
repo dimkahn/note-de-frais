@@ -1,5 +1,6 @@
 package fr.notedefrais.expense.web;
 
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;

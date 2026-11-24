@@ -1,6 +1,6 @@
 package fr.notedefrais.document;
 
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.receipt.imaging.Quad;
 import java.util.UUID;
 

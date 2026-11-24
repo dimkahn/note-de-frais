@@ -1,5 +1,6 @@
 package fr.notedefrais.expense;
 
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.Instant;

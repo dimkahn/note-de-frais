@@ -1,5 +1,6 @@
 package fr.notedefrais.expense;
 
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;

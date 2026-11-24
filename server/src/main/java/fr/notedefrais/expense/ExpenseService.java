@@ -1,5 +1,6 @@
 package fr.notedefrais.expense;
 
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;

@@ -2,7 +2,7 @@ package fr.notedefrais.expense.web;
 
 import fr.notedefrais.expense.Category;
 import fr.notedefrais.expense.Expense;
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.expense.ProcessingStatus;
 import java.math.BigDecimal;
 import java.time.Instant;

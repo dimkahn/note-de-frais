@@ -15,7 +15,7 @@ import fr.notedefrais.document.DocumentContent;
 import fr.notedefrais.document.DocumentNotFoundException;
 import fr.notedefrais.document.DocumentPage;
 import fr.notedefrais.document.DocumentService;
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import fr.notedefrais.receipt.imaging.Quad;
 import java.time.Instant;
 import java.util.Arrays;

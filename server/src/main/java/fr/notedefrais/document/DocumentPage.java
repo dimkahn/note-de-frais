@@ -1,6 +1,6 @@
 package fr.notedefrais.document;
 
-import fr.notedefrais.expense.ImageFilter;
+import fr.notedefrais.receipt.imaging.ImageFilter;
 import jakarta.persistence.*;
 import java.util.UUID;
 
