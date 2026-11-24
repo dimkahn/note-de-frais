@@ -37,9 +37,6 @@ final class DocumentScanner {
   /// Contours examinés par passe (les plus grands).
   static const _maxCandidates = 10;
 
-  /// Déplacement maximal d'un coin (fraction de l'image) pour qu'un candidat soit le contour suivi.
-  static const _trackedMaxShift = 0.08;
-
   /// Écart minimal de teinte (canal b de Lab) pour tenter la passe couleur.
   static const _minWarmthRange = 6.0;
 
@@ -184,7 +181,7 @@ final class DocumentScanner {
       Quad? fallback;
       for (final (pass, mayFallBack) in passes) {
         Quad? closest;
-        var closestShift = _trackedMaxShift;
+        var closestShift = Quad.sameDocumentShift;
         for (final quad in _quads(pass(), gray)) {
           if (_touchesBorder(quad)) {
             if (mayFallBack) fallback ??= quad;

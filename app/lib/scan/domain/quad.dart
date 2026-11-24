@@ -63,6 +63,11 @@ final class Quad {
     );
   }
 
+  /// Déplacement maximal d'un coin (fraction de l'image) entre deux images du flux caméra pour
+  /// considérer qu'elles montrent le même document : sert au lissage du contour affiché
+  /// (`QuadSmoother`) et au choix du candidat suivi (`DocumentScanner`).
+  static const sameDocumentShift = 0.08;
+
   final Corner topLeft;
   final Corner topRight;
   final Corner bottomRight;

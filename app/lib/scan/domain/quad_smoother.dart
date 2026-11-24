@@ -4,7 +4,7 @@ import 'quad.dart';
 final class QuadSmoother {
   QuadSmoother({
     this.follow = 0.5,
-    this.jump = 0.08,
+    this.jump = Quad.sameDocumentShift,
     this.dropout = const Duration(milliseconds: 400),
   });
 
