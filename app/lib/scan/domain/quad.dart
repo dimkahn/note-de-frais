@@ -111,6 +111,14 @@ final class Quad {
     return [for (var i = 0; i < 4; i++) a[i].distanceTo(b[i])].reduce(math.max);
   }
 
+  /// Contour à la fraction [t] du chemin vers [other], coin par coin.
+  Quad lerpTo(Quad other, double t) {
+    final a = corners, b = other.corners;
+    Corner at(int i) =>
+        Corner(a[i].x + (b[i].x - a[i].x) * t, a[i].y + (b[i].y - a[i].y) * t);
+    return Quad(at(0), at(1), at(2), at(3));
+  }
+
   Quad withCorner(int index, Corner c) {
     final pts = corners..[index] = c;
     return Quad(pts[0], pts[1], pts[2], pts[3]);

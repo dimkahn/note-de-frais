@@ -4,7 +4,8 @@ Contrepartie serveur : `server/…/receipt/`. Conception : `docs/design/scanner.
 
 - `domain/` (pur Dart) : `Quad` (coins normalisés, ordre HG/HD/BD/BG comme le serveur), `Rotation`
   (quart de tour horaire, aligné serveur), `ScanMode` (Ticket = 1 page / Document) et `ScanSession`
-  (pages prises, immuable), `Stability` (déclenchement auto), `ReceiptParser` (devine total, TVA, date,
+  (pages prises, immuable), `Stability` (déclenchement auto), `QuadSmoother` (contour affiché en direct : lissé, tient bon
+  aux ratés et aux images isolées), `ReceiptParser` (devine total, TVA, date,
   devise, commerçant), `ReceiptTextReader` (frontière OCR).
 - `data/` : `DocumentScanner` (OpenCV sur l'appareil, paramètres alignés sur `OpenCvImageProcessor` serveur),
   `MlkitReceiptTextReader` + `text_rows` (ML Kit, sans réseau).

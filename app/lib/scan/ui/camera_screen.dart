@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../domain/quad.dart';
 import '../domain/scan_session.dart';
+import '../domain/quad_smoother.dart';
 import '../domain/stability.dart';
 import 'adjust_screen.dart';
 import 'corner_editor.dart';
@@ -54,6 +55,7 @@ class _CameraScreenState extends State<CameraScreen>
   /// Scan terminé ou abandonné : l'écran se ferme, la caméra ne doit plus repartir.
   bool _done = false;
   final _tracker = StabilityTracker();
+  final _smoother = QuadSmoother();
   bool _autoCapture = true;
   bool _analyzing = false;
   bool _capturing = false;
@@ -160,9 +162,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _onDetected(Quad? onScreen) {
     if (!mounted) return;
-    final fire = _tracker.update(onScreen, DateTime.now());
+    final now = DateTime.now();
+    final fire = _tracker.update(onScreen, now);
     setState(() {
-      _liveQuad = onScreen;
+      _liveQuad = _smoother.update(onScreen, now);
       _detectionFailed = false;
     });
     if (fire && _autoCapture) _capture();
