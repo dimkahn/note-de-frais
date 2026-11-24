@@ -31,6 +31,29 @@ void main() {
     expect(t.update(Quad.inset(0.3), at(1600)), isTrue);
   });
 
+  test(
+    'une image aberrante isolée (autre contour) ne relance pas l\'attente',
+    () {
+      final t = tracker();
+      t.update(doc, at(0));
+      t.update(doc, at(200));
+
+      t.update(Quad.inset(0.3), at(300));
+
+      expect(t.update(doc, at(1000)), isTrue);
+    },
+  );
+
+  test('après une perte durable, l\'attente repart de zéro', () {
+    final t = tracker();
+    t.update(doc, at(0));
+    t.update(Quad.inset(0.3), at(100));
+    t.update(null, at(1000));
+
+    expect(t.update(Quad.inset(0.3), at(1500)), isFalse);
+    expect(t.update(Quad.inset(0.3), at(2000)), isFalse);
+  });
+
   test('la perte durable du document relance l\'attente', () {
     final t = StabilityTracker(
       holdFor: const Duration(milliseconds: 1000),
