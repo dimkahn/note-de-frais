@@ -7,6 +7,7 @@ import 'package:note_de_frais/shared/data/file_store.dart';
 import 'package:note_de_frais/shared/data/local_store.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../support/fake_biometric_auth.dart';
@@ -171,6 +172,36 @@ void main() {
         inMemoryDatabasePath,
         factory: databaseFactoryFfi,
       );
+    },
+  );
+
+  test(
+    'une page scannée pivotée garde sa rotation, et la change au réajustement',
+    () async {
+      final doc = await repo.create([
+        PageCapture(
+          photoPath: (File(
+            '${dir.path}/photo-r.jpg',
+          )..writeAsBytesSync([1])).path,
+          corners: Quad.inset(0.1),
+          filter: ImageFilter.none,
+          rotation: Rotation.clockwise90,
+          processedJpeg: const [9],
+        ),
+      ]);
+      final created = repo.byId(doc.id)!.pages.single.rotation;
+
+      await repo.adjustPage(
+        doc.id,
+        doc.pages.single.id,
+        corners: Quad.inset(0.1),
+        filter: ImageFilter.none,
+        rotation: Rotation.clockwise180,
+        processedJpeg: [7],
+      );
+
+      expect(created, Rotation.clockwise90);
+      expect(repo.byId(doc.id)!.pages.single.rotation, Rotation.clockwise180);
     },
   );
 

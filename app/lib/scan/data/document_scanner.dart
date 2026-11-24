@@ -6,6 +6,7 @@ import 'package:opencv_dart/opencv_dart.dart' as cv;
 
 import '../../expense/domain/expense.dart';
 import '../domain/quad.dart';
+import '../domain/rotation.dart';
 
 /// Détection du contour, redressement et filtres, sur l'appareil (hors-ligne).
 ///
@@ -101,11 +102,12 @@ final class DocumentScanner {
     }
   }
 
-  /// Redresse [encoded] selon [quad] puis applique [filter] ; renvoie un JPEG.
+  /// Redresse [encoded] selon [quad], applique [filter] puis [rotation] ; renvoie un JPEG.
   Uint8List render(
     Uint8List encoded,
     Quad quad,
     ImageFilter filter, {
+    Rotation rotation = Rotation.none,
     int maxSide = 2400,
   }) {
     final src = cv.imdecode(encoded, cv.IMREAD_COLOR);
@@ -127,9 +129,24 @@ final class DocumentScanner {
             )
           : warped;
       final filtered = _track(mats, _applyFilter(sized, filter, mats));
+      final rotated = switch (rotation) {
+        Rotation.none => filtered,
+        Rotation.clockwise90 => _track(
+          mats,
+          cv.rotate(filtered, cv.ROTATE_90_CLOCKWISE),
+        ),
+        Rotation.clockwise180 => _track(
+          mats,
+          cv.rotate(filtered, cv.ROTATE_180),
+        ),
+        Rotation.clockwise270 => _track(
+          mats,
+          cv.rotate(filtered, cv.ROTATE_90_COUNTERCLOCKWISE),
+        ),
+      };
       final (_, jpeg) = cv.imencode(
         '.jpg',
-        filtered,
+        rotated,
         params: cv.VecI32.fromList([cv.IMWRITE_JPEG_QUALITY, _jpegQuality]),
       );
       return jpeg;

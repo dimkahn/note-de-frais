@@ -8,6 +8,7 @@ import 'package:note_de_frais/shared/data/local_store.dart';
 import 'package:note_de_frais/document/domain/document.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../../support/fake_server.dart';
@@ -139,6 +140,45 @@ void main() {
     final page = (await local('d1')).pages.single;
     expect(page.syncState, SyncState.synced);
     expect(page.renderVersion, 2);
+  });
+
+  test(
+    'envoie la rotation des pages, à l\'envoi comme au réajustement',
+    () async {
+      final page = (await scannedPage('p1'))
+          .copyWith(rotation: Rotation.clockwise90);
+      await store.saveDocument(
+        ScannedDocument.create(id: 'd1', createdAt: at).withPage(page, at: at),
+      );
+      await sync.sync();
+      final sentRotation = server.documents['d1']!.pages['p1']!['rotation'];
+      final rendered = await files.saveProcessedVersion('p1', [8]);
+      await store.saveDocument(
+        (await local('d1')).withPageAdjusted(
+          'p1',
+          corners: Quad.inset(0.2),
+          filter: ImageFilter.sharpen,
+          rotation: Rotation.clockwise180,
+          processedPath: rendered.path,
+          at: at.add(const Duration(minutes: 1)),
+        ),
+      );
+
+      await sync.sync();
+
+      expect(sentRotation, 90);
+      expect(server.documents['d1']!.pages['p1']!['rotation'], 180);
+      expect((await local('d1')).pages.single.rotation, Rotation.clockwise180);
+    },
+  );
+
+  test('reçoit la rotation des pages d\'un autre appareil', () async {
+    server.documentFromAnotherDevice('d9', ['a']);
+    server.documents['d9']!.pages['a']!['rotation'] = 270;
+
+    await sync.sync();
+
+    expect((await local('d9')).pages.single.rotation, Rotation.clockwise270);
   });
 
   test('un retrait de page envoie le nouvel ordre au serveur', () async {

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import '../domain/document.dart';
 import '../../expense/domain/expense.dart';
 import '../../scan/domain/quad.dart';
+import '../../scan/domain/rotation.dart';
 import '../../account/data/account_repository.dart';
 import 'document_api.dart';
 import 'document_sync_service.dart';
@@ -18,12 +19,14 @@ final class PageCapture {
     required this.photoPath,
     required this.corners,
     required this.filter,
+    this.rotation = Rotation.none,
     required this.processedJpeg,
   });
 
   final String photoPath;
   final Quad corners;
   final ImageFilter filter;
+  final Rotation rotation;
   final List<int> processedJpeg;
 }
 
@@ -170,6 +173,7 @@ class DocumentRepository extends ChangeNotifier {
     String pageId, {
     required Quad corners,
     required ImageFilter filter,
+    Rotation? rotation,
     required List<int> processedJpeg,
   }) async {
     final page = byId(id)?.pages.where((p) => p.id == pageId).firstOrNull;
@@ -181,6 +185,7 @@ class DocumentRepository extends ChangeNotifier {
         pageId,
         corners: corners,
         filter: filter,
+        rotation: rotation,
         processedPath: processed.path,
         at: now,
       ),
@@ -207,6 +212,7 @@ class DocumentRepository extends ChangeNotifier {
       processedPath: processed.path,
       corners: capture.corners,
       filter: capture.filter,
+      rotation: capture.rotation,
     );
   }
 

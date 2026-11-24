@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:note_de_frais/document/domain/document.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -140,6 +141,75 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  test('migre une base de la version 5 : rien n\'est pivoté, la rotation s\'enregistre', () async {
+    final dir = await Directory.systemTemp.createTemp('ndf_migration');
+    final path = '${dir.path}/v5.db';
+    final v5 = await databaseFactoryFfi.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 5,
+        onCreate: (db, _) async {
+          await db.execute(
+            'CREATE TABLE expense (id TEXT PRIMARY KEY, merchant TEXT, category TEXT, expense_date TEXT, '
+            'amount_total TEXT, amount_vat TEXT, currency TEXT, city TEXT, country TEXT, address TEXT, '
+            'payment_method TEXT, description TEXT, user_edited INTEGER NOT NULL DEFAULT 0, '
+            'prefilled INTEGER NOT NULL DEFAULT 0, filter TEXT NOT NULL, cropped INTEGER NOT NULL DEFAULT 0, '
+            'corners TEXT, has_processed_image INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, '
+            'processing_error TEXT, deleted INTEGER NOT NULL DEFAULT 0, created_at TEXT, server_updated_at TEXT, '
+            'sync_state TEXT NOT NULL, original_path TEXT, processed_path TEXT)',
+          );
+          await db.execute(
+            'CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)',
+          );
+          await db.execute(
+            "CREATE TABLE document (id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL, deleted INTEGER NOT NULL DEFAULT 0, "
+            "sync_state TEXT NOT NULL DEFAULT 'pendingUpload')",
+          );
+          await db.execute(
+            "CREATE TABLE document_page (id TEXT PRIMARY KEY, document_id TEXT NOT NULL REFERENCES document(id), "
+            "position INTEGER NOT NULL, original_path TEXT NOT NULL, processed_path TEXT NOT NULL, "
+            "corners TEXT NOT NULL, filter TEXT NOT NULL, sync_state TEXT NOT NULL DEFAULT 'pendingUpload', "
+            "render_version INTEGER)",
+          );
+          await db.insert('expense', {
+            'id': 'ancien',
+            'filter': 'ENHANCE',
+            'status': 'DONE',
+            'sync_state': 'synced',
+          });
+          await db.insert('document', {
+            'id': 'doc',
+            'title': 'Bail',
+            'created_at': '2026-11-23T09:00:00.000Z',
+            'updated_at': '2026-11-23T09:00:00.000Z',
+          });
+          await db.insert('document_page', {
+            'id': 'p1',
+            'document_id': 'doc',
+            'position': 0,
+            'original_path': '/o.jpg',
+            'processed_path': '/p.jpg',
+            'corners': Quad.inset(0).format(),
+            'filter': 'NONE',
+          });
+        },
+      ),
+    );
+    await v5.close();
+
+    final migrated = await LocalStore.open(path, factory: databaseFactoryFfi);
+    final expense = (await migrated.get('ancien'))!;
+    final page = (await migrated.documents()).single.pages.single;
+    await migrated.save(expense.copyWith(rotation: Rotation.clockwise90));
+
+    expect(expense.rotation, Rotation.none);
+    expect(page.rotation, Rotation.none);
+    expect((await migrated.get('ancien'))!.rotation, Rotation.clockwise90);
+    await migrated.close();
+    await dir.delete(recursive: true);
+  });
+
   group('documents', () {
     final at = DateTime.utc(2026, 11, 23, 9);
     ScannedPage page(String id, ImageFilter filter) => ScannedPage(
@@ -163,6 +233,20 @@ void main() {
       expect(read.pages.map((p) => p.id), ['p2', 'p1']);
       expect(read.pages.first.filter, ImageFilter.scanBw);
       expect(read.pages.first.corners, Quad.inset(0.1));
+    });
+
+    test('conserve la rotation d\'une page', () async {
+      final doc = ScannedDocument.create(id: 'd1', createdAt: at).withPage(
+        page('p1', ImageFilter.none).copyWith(rotation: Rotation.clockwise180),
+        at: at,
+      );
+
+      await store.saveDocument(doc);
+
+      expect(
+        (await store.documents()).single.pages.single.rotation,
+        Rotation.clockwise180,
+      );
     });
 
     test('un nouvel enregistrement remplace les pages', () async {

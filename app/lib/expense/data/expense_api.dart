@@ -2,6 +2,7 @@ import 'package:http/http.dart' as http;
 
 import '../domain/expense.dart';
 import '../../scan/domain/quad.dart';
+import '../../scan/domain/rotation.dart';
 import '../../shared/data/server_client.dart';
 
 export '../../shared/data/server_client.dart'
@@ -32,6 +33,7 @@ final class ExpenseApi {
       (request) => request
         ..fields['id'] = e.id
         ..fields['filter'] = e.filter.code
+        ..fields['rotation'] = '${e.rotation.degrees}'
         ..fields.addAll({if (e.corners != null) 'corners': e.corners!.format()})
         ..files.add(
           ServerClient.file(
@@ -53,10 +55,12 @@ final class ExpenseApi {
     String id,
     ImageFilter filter,
     Quad? corners,
+    Rotation rotation,
   ) async {
     final response = await _server.post('/api/expenses/$id/reprocess', {
       'filter': filter.code,
       if (corners != null) 'corners': corners.format(),
+      'rotation': '${rotation.degrees}',
     });
     return _expense(response);
   }

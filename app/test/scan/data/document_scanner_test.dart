@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:note_de_frais/scan/data/document_scanner.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 
@@ -366,6 +367,21 @@ void main() {
           reason: filter.name,
         );
       }
+    });
+
+    test('pivote le rendu d\'un quart de tour horaire après recadrage', () {
+      final quad = Quad.inset(0.25);
+
+      final jpeg = scanner.render(
+        uniform(1000, 800),
+        quad,
+        ImageFilter.none,
+        rotation: Rotation.clockwise90,
+      );
+
+      final (w, h) = sizeOf(jpeg);
+      expect(w, inInclusiveRange(395, 405));
+      expect(h, inInclusiveRange(495, 505));
     });
 
     test('limite la taille de l\'aperçu', () {

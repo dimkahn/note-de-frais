@@ -8,6 +8,7 @@ import 'package:note_de_frais/shared/data/local_store.dart';
 import 'package:note_de_frais/expense/data/sync_service.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:note_de_frais/scan/domain/receipt_parser.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -200,6 +201,34 @@ void main() {
     );
     expect(reprocess.url.queryParameters['filter'], 'SHARPEN');
     expect(reprocess.url.queryParameters['corners'], Quad.inset(0.2).format());
+  });
+
+  test('envoie la rotation choisie sur l\'appareil', () async {
+    final e = await captured('a');
+    await store.save(e.copyWith(rotation: Rotation.clockwise90));
+
+    await sync.sync();
+
+    expect(server.uploadedField('rotation'), '90');
+  });
+
+  test('un retraitement envoie la rotation', () async {
+    await captured('a');
+    await sync.sync();
+    final e = (await store.get('a'))!;
+    await store.save(
+      e.copyWith(
+        rotation: Rotation.clockwise270,
+        syncState: SyncState.pendingReprocess,
+      ),
+    );
+
+    await sync.sync();
+
+    final reprocess = server.requests.lastWhere(
+      (r) => r.url.path.endsWith('/reprocess'),
+    );
+    expect(reprocess.url.queryParameters['rotation'], '270');
   });
 
   group('espace en ligne plein', () {

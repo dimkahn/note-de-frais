@@ -3,6 +3,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import '../../document/domain/document.dart';
 import '../../expense/domain/expense.dart';
 import '../../scan/domain/quad.dart';
+import '../../scan/domain/rotation.dart';
 
 /// Base SQLite locale : source de vérité de l'application (hors-ligne d'abord).
 final class LocalStore {
@@ -10,7 +11,7 @@ final class LocalStore {
 
   final Database _db;
 
-  static const _schemaVersion = 5;
+  static const _schemaVersion = 6;
 
   static Future<LocalStore> open(
     String path, {
@@ -39,6 +40,7 @@ final class LocalStore {
         filter TEXT NOT NULL,
         cropped INTEGER NOT NULL DEFAULT 0,
         corners TEXT,
+        rotation INTEGER NOT NULL DEFAULT 0,
         has_processed_image INTEGER NOT NULL DEFAULT 0,
         status TEXT NOT NULL,
         processing_error TEXT,
@@ -70,6 +72,7 @@ final class LocalStore {
         processed_path TEXT NOT NULL,
         corners TEXT NOT NULL,
         filter TEXT NOT NULL,
+        rotation INTEGER NOT NULL DEFAULT 0,
         sync_state TEXT NOT NULL DEFAULT 'pendingUpload',
         render_version INTEGER
       )''');
@@ -98,6 +101,17 @@ final class LocalStore {
       await db.execute(
         'ALTER TABLE document_page ADD COLUMN render_version INTEGER',
       );
+    }
+    if (from < 6) {
+      // Les rendus existants ne sont pas pivotés.
+      await db.execute(
+        'ALTER TABLE expense ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0',
+      );
+      if (from >= 4) {
+        await db.execute(
+          'ALTER TABLE document_page ADD COLUMN rotation INTEGER NOT NULL DEFAULT 0',
+        );
+      }
     }
   }
 
@@ -217,6 +231,7 @@ final class LocalStore {
         'processed_path': page.processedPath,
         'corners': page.corners.format(),
         'filter': page.filter.code,
+        'rotation': page.rotation.degrees,
         'sync_state': page.syncState.name,
         'render_version': page.renderVersion,
       });
@@ -289,6 +304,7 @@ final class LocalStore {
           processedPath: row['processed_path']! as String,
           corners: Quad.parse(row['corners']! as String),
           filter: ImageFilter.fromCode(row['filter'] as String?),
+          rotation: Rotation.fromDegrees(row['rotation']),
           syncState: SyncState.values.byName(row['sync_state']! as String),
           renderVersion: row['render_version'] as int?,
         ),

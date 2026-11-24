@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../domain/expense.dart';
 import '../../scan/domain/quad.dart';
+import '../../scan/domain/rotation.dart';
 import '../../scan/domain/receipt_parser.dart';
 import '../../scan/domain/receipt_text_reader.dart';
 import '../../account/data/account_repository.dart';
@@ -87,15 +88,22 @@ class ExpenseRepository extends ChangeNotifier {
     Quad corners,
     ImageFilter filter, {
     required List<int> processedJpeg,
+    Rotation rotation = Rotation.none,
   }) async {
     final id = const Uuid().v4();
     final original = await _files.saveOriginal(id, photoPath);
     final processed = await _files.saveProcessed(id, processedJpeg);
-    final expense = Expense.draft(
-      id: id,
-      originalPath: original.path,
-      filter: filter,
-    ).copyWith(corners: corners, cropped: true, processedPath: processed.path);
+    final expense =
+        Expense.draft(
+          id: id,
+          originalPath: original.path,
+          filter: filter,
+        ).copyWith(
+          corners: corners,
+          rotation: rotation,
+          cropped: true,
+          processedPath: processed.path,
+        );
     await _store.save(expense);
     await _reload();
     await _readReceipt(id, processed.path);
@@ -133,12 +141,13 @@ class ExpenseRepository extends ChangeNotifier {
     await _saveAndSync(current.withEditedFields(edited));
   }
 
-  /// Nouveau traitement depuis l'original : autre filtre et/ou contour réajusté.
+  /// Nouveau traitement depuis l'original : autre filtre, contour réajusté et/ou rotation.
   /// [processedJpeg] : aperçu calculé sur l'appareil, affiché sans attendre le serveur.
   Future<void> reprocess(
     String id,
     ImageFilter filter, {
     Quad? corners,
+    Rotation? rotation,
     List<int>? processedJpeg,
   }) async {
     final current = byId(id);
@@ -151,6 +160,7 @@ class ExpenseRepository extends ChangeNotifier {
       current.copyWith(
         filter: filter,
         corners: corners,
+        rotation: rotation,
         processedPath: processed?.path,
         cropped: corners != null ? true : null,
         status: ProcessingStatus.pending,

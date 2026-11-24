@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
 import 'package:note_de_frais/scan/domain/receipt_parser.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 
 void main() {
   const serverJson = {
@@ -41,6 +42,24 @@ void main() {
       expect(e.serverUpdatedAt, DateTime.utc(2026, 3, 10, 12, 1));
       expect(e.syncState, SyncState.synced);
       expect(e.corners, Quad.inset(0.1));
+    });
+
+    test('reprend la rotation du serveur, aucune si elle est absente', () {
+      final rotated = Expense.fromServerJson({...serverJson, 'rotation': 90});
+      final plain = Expense.fromServerJson(serverJson);
+
+      expect(rotated.rotation, Rotation.clockwise90);
+      expect(plain.rotation, Rotation.none);
+    });
+
+    test('la rotation survit à la base locale', () {
+      final e = Expense.fromServerJson(serverJson)
+          .copyWith(rotation: Rotation.clockwise270);
+
+      final back = Expense.fromDb(e.toDb());
+
+      expect(back.rotation, Rotation.clockwise270);
+      expect(back, e);
     });
 
     test('les montants restent exacts en texte décimal', () {

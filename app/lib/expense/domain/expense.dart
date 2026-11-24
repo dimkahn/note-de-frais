@@ -1,6 +1,7 @@
 import 'money.dart';
 import '../../scan/domain/quad.dart';
 import '../../scan/domain/receipt_parser.dart';
+import '../../scan/domain/rotation.dart';
 
 /// Type de dépense (aligné sur l'énumération `Category` du serveur).
 enum ExpenseCategory {
@@ -92,6 +93,7 @@ final class Expense {
     this.filter = ImageFilter.enhance,
     this.cropped = false,
     this.corners,
+    this.rotation = Rotation.none,
     this.hasProcessedImage = false,
     this.status = ProcessingStatus.pending,
     this.processingError,
@@ -133,6 +135,7 @@ final class Expense {
     filter: ImageFilter.fromCode(json['filter'] as String?),
     cropped: json['cropped'] as bool? ?? false,
     corners: _quad(json['corners']),
+    rotation: Rotation.fromDegrees(json['rotation']),
     hasProcessedImage: json['hasProcessedImage'] as bool? ?? false,
     status: ProcessingStatus.fromCode(json['status'] as String?),
     processingError: json['processingError'] as String?,
@@ -159,6 +162,7 @@ final class Expense {
     filter: ImageFilter.fromCode(row['filter'] as String?),
     cropped: row['cropped'] == 1,
     corners: _quad(row['corners']),
+    rotation: Rotation.fromDegrees(row['rotation']),
     hasProcessedImage: row['has_processed_image'] == 1,
     status: ProcessingStatus.fromCode(row['status'] as String?),
     processingError: row['processing_error'] as String?,
@@ -192,6 +196,9 @@ final class Expense {
 
   /// Contour choisi sur l'appareil ; `null` = détection automatique par le serveur.
   final Quad? corners;
+
+  /// Quart de tour horaire du rendu, choisi sur l'appareil.
+  final Rotation rotation;
   final bool hasProcessedImage;
   final ProcessingStatus status;
   final String? processingError;
@@ -227,6 +234,7 @@ final class Expense {
     'filter': filter.code,
     'cropped': cropped ? 1 : 0,
     'corners': corners?.format(),
+    'rotation': rotation.degrees,
     'has_processed_image': hasProcessedImage ? 1 : 0,
     'status': status.code,
     'processing_error': processingError,
@@ -270,6 +278,7 @@ final class Expense {
     ImageFilter? filter,
     bool? cropped,
     Quad? corners,
+    Rotation? rotation,
     bool? hasProcessedImage,
     ProcessingStatus? status,
     String? processingError,
@@ -296,6 +305,7 @@ final class Expense {
     filter: filter ?? this.filter,
     cropped: cropped ?? this.cropped,
     corners: corners ?? this.corners,
+    rotation: rotation ?? this.rotation,
     hasProcessedImage: hasProcessedImage ?? this.hasProcessedImage,
     status: status ?? this.status,
     processingError: processingError ?? this.processingError,
@@ -351,6 +361,7 @@ final class Expense {
     filter: filter,
     cropped: cropped,
     corners: corners,
+    rotation: rotation,
     hasProcessedImage: hasProcessedImage,
     status: status,
     processingError: processingError,

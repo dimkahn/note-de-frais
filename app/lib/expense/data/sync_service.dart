@@ -77,7 +77,12 @@ final class SyncService {
       case SyncState.pendingReprocess:
         await _store.save(
           _merge(
-            await _api.reprocess(local.id, local.filter, local.corners),
+            await _api.reprocess(
+              local.id,
+              local.filter,
+              local.corners,
+              local.rotation,
+            ),
             local,
           ),
         );

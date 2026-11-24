@@ -200,6 +200,7 @@ final class DocumentSyncService {
       processedPath: processedPath,
       corners: remote.corners ?? Quad.inset(0),
       filter: remote.filter,
+      rotation: remote.rotation,
       syncState: SyncState.synced,
       renderVersion: remote.renderVersion,
     );

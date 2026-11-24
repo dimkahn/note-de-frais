@@ -8,6 +8,7 @@ import 'package:note_de_frais/shared/data/local_store.dart';
 import 'package:note_de_frais/account/domain/account.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:note_de_frais/scan/domain/receipt_text_reader.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -145,6 +146,40 @@ void main() {
     server.offline = false;
     await repo.sync();
     expect(server.uploadedField('corners'), quad.format());
+  });
+
+  test('un scan pivoté garde sa rotation', () async {
+    final e = await repo.captureScan(
+      photo(),
+      Quad.inset(0.1),
+      ImageFilter.enhance,
+      processedJpeg: [1],
+      rotation: Rotation.clockwise90,
+    );
+
+    expect(repo.byId(e.id)!.rotation, Rotation.clockwise90);
+  });
+
+  test('pivoter une dépense relance son traitement avec la rotation', () async {
+    final e = await repo.captureScan(
+      photo(),
+      Quad.inset(0.1),
+      ImageFilter.enhance,
+      processedJpeg: [1],
+    );
+
+    await repo.reprocess(
+      e.id,
+      ImageFilter.enhance,
+      rotation: Rotation.clockwise180,
+      processedJpeg: [2],
+    );
+
+    expect(repo.byId(e.id)!.rotation, Rotation.clockwise180);
+    final reprocess = server.requests.lastWhere(
+      (r) => r.url.path.endsWith('/reprocess'),
+    );
+    expect(reprocess.url.queryParameters['rotation'], '180');
   });
 
   test(

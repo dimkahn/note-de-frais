@@ -88,7 +88,11 @@ class FakeServer {
       final uploadedId = RegExp(r'name="id"\r\n\r\n([^\r]+)')
           .firstMatch(body)!
           .group(1)!;
-      expenses[uploadedId] = _json(uploadedId, status: 'PENDING');
+      expenses[uploadedId] = {
+        ..._json(uploadedId, status: 'PENDING'),
+        'rotation':
+            int.tryParse(_multipartField(request, 'rotation') ?? '') ?? 0,
+      };
       return _ok(expenses[uploadedId], 202);
     }
     if (request.method == 'PUT') {
@@ -104,7 +108,11 @@ class FakeServer {
       expenses.remove(id);
       return http.Response('', 204);
     }
-    if (path.endsWith('/reprocess')) return _ok(expenses[id], 202);
+    if (path.endsWith('/reprocess')) {
+      final rotation = request.url.queryParameters['rotation'];
+      if (rotation != null) expenses[id!]!['rotation'] = int.parse(rotation);
+      return _ok(expenses[id], 202);
+    }
     if (path == '/api/expenses/changes') return _ok(expenses.values.toList());
     if (path.endsWith('/processed')) return http.Response.bytes([7, 7], 200);
     if (path.endsWith('/original')) return http.Response.bytes([1, 1], 200);
@@ -178,6 +186,8 @@ class FakeServer {
         'id': pageId,
         'filter': _multipartField(request, 'filter'),
         'corners': _multipartField(request, 'corners'),
+        'rotation':
+            int.tryParse(_multipartField(request, 'rotation') ?? '') ?? 0,
         'renderVersion': 1,
       };
       doc.updatedAt = _tick();
@@ -189,7 +199,9 @@ class FakeServer {
       page
         ..['renderVersion'] = (page['renderVersion']! as int) + 1
         ..['filter'] = _multipartField(request, 'filter')
-        ..['corners'] = _multipartField(request, 'corners');
+        ..['corners'] = _multipartField(request, 'corners')
+        ..['rotation'] =
+            int.tryParse(_multipartField(request, 'rotation') ?? '') ?? 0;
       doc.updatedAt = _tick();
       return _ok(page);
     }

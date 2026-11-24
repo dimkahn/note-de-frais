@@ -1,5 +1,6 @@
 import '../../expense/domain/expense.dart';
 import '../../scan/domain/quad.dart';
+import '../../scan/domain/rotation.dart';
 
 /// Page scannée : photo brute conservée telle quelle et copie recadrée/filtrée.
 final class ScannedPage {
@@ -9,6 +10,7 @@ final class ScannedPage {
     required this.processedPath,
     required this.corners,
     required this.filter,
+    this.rotation = Rotation.none,
     this.syncState = SyncState.pendingUpload,
     this.renderVersion,
   });
@@ -19,11 +21,32 @@ final class ScannedPage {
   final Quad corners;
   final ImageFilter filter;
 
+  /// Quart de tour horaire du rendu.
+  final Rotation rotation;
+
   /// `pendingUpload` (jamais envoyée), `pendingReprocess` (rendu à renvoyer) ou `synced`.
   final SyncState syncState;
 
   /// Version du rendu connue du serveur (`null` : jamais envoyée).
   final int? renderVersion;
+
+  ScannedPage copyWith({
+    String? processedPath,
+    Quad? corners,
+    ImageFilter? filter,
+    Rotation? rotation,
+    SyncState? syncState,
+    int? renderVersion,
+  }) => ScannedPage(
+    id: id,
+    originalPath: originalPath,
+    processedPath: processedPath ?? this.processedPath,
+    corners: corners ?? this.corners,
+    filter: filter ?? this.filter,
+    rotation: rotation ?? this.rotation,
+    syncState: syncState ?? this.syncState,
+    renderVersion: renderVersion ?? this.renderVersion,
+  );
 }
 
 /// Document de plusieurs pages (contrat, attestation…), distinct d'une dépense. Immuable.
@@ -82,6 +105,7 @@ final class ScannedDocument {
     String pageId, {
     required Quad corners,
     required ImageFilter filter,
+    Rotation? rotation,
     required String processedPath,
     required DateTime at,
   }) => _copy(
@@ -94,6 +118,7 @@ final class ScannedDocument {
                 processedPath: processedPath,
                 corners: corners,
                 filter: filter,
+                rotation: rotation ?? p.rotation,
                 // Jamais envoyée : partira avec son rendu courant.
                 syncState: p.syncState == SyncState.pendingUpload
                     ? SyncState.pendingUpload

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../domain/document.dart';
 import '../../expense/domain/expense.dart';
 import '../../scan/domain/quad.dart';
+import '../../scan/domain/rotation.dart';
 import '../../shared/data/server_client.dart';
 
 export '../../shared/data/server_client.dart'
@@ -19,6 +20,7 @@ final class RemotePage {
     required this.id,
     required this.filter,
     required this.corners,
+    this.rotation = Rotation.none,
     required this.renderVersion,
   });
 
@@ -28,6 +30,7 @@ final class RemotePage {
       id: json['id']! as String,
       filter: ImageFilter.fromCode(json['filter'] as String?),
       corners: corners == null ? null : Quad.parse(corners),
+      rotation: Rotation.fromDegrees(json['rotation']),
       renderVersion: json['renderVersion']! as int,
     );
   }
@@ -35,6 +38,7 @@ final class RemotePage {
   final String id;
   final ImageFilter filter;
   final Quad? corners;
+  final Rotation rotation;
   final int renderVersion;
 }
 
@@ -155,6 +159,7 @@ final class DocumentApi {
   static Map<String, String> _rendering(ScannedPage page) => {
     'filter': page.filter.code,
     'corners': page.corners.format(),
+    'rotation': '${page.rotation.degrees}',
   };
 
   static RemoteDocument _document(http.Response response) =>
