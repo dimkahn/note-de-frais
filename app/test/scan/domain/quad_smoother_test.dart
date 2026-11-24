@@ -76,4 +76,13 @@ void main() {
       expect(s.update(Quad.inset(0.4), at(600)), Quad.inset(0.4));
     },
   );
+
+  test('après une remise à zéro, le nouveau contour est affiché aussitôt', () {
+    final s = QuadSmoother();
+    s.update(doc, at(0));
+
+    s.reset();
+
+    expect(s.update(Quad.inset(0.3), at(100)), Quad.inset(0.3));
+  });
 }

@@ -7,8 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../domain/quad.dart';
-import '../domain/scan_session.dart';
 import '../domain/quad_smoother.dart';
+import '../domain/scan_session.dart';
 import '../domain/stability.dart';
 import 'adjust_screen.dart';
 import 'corner_editor.dart';
@@ -184,10 +184,18 @@ class _CameraScreenState extends State<CameraScreen>
     if (!mounted) return;
     _tracker.update(null, DateTime.now());
     if (_detectionFailed && _liveQuad == null) return;
+    _smoother.reset();
     setState(() {
       _liveQuad = null;
       _detectionFailed = true;
     });
+  }
+
+  /// Nouvelle page ou autre mode : ni le contour affiché ni l'attente ne valent plus.
+  void _forgetLiveQuad() {
+    _tracker.reset();
+    _smoother.reset();
+    _liveQuad = null;
   }
 
   Future<void> _capture() async {
@@ -216,7 +224,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_done || !mounted || controller == null) return;
     if (controller.value.isStreamingImages) return;
     try {
-      _tracker.reset();
+      setState(_forgetLiveQuad);
       await controller.startImageStream(_onFrame);
     } on CameraException catch (e) {
       debugPrint('Reprise de la détection en direct impossible : $e');
@@ -276,7 +284,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _setMode(ScanMode mode) => setState(() {
     _session = _session.withMode(mode);
-    _tracker.reset();
+    _forgetLiveQuad();
   });
 
   /// Pendant la revue, la détection en direct est inutile : on coupe le flux.

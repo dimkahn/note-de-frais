@@ -49,6 +49,14 @@ final class QuadSmoother {
     return _shown;
   }
 
+  /// Oublie le contour affiché (nouvelle page, autre mode) : le prochain est affiché tel quel.
+  void reset() {
+    _shown = null;
+    _seen = null;
+    _far = null;
+    _farSeen = null;
+  }
+
   /// Vrai si [detected] est proche du contour lointain vu juste avant (sans trou de plus de
   /// [dropout]) ; [detected] devient le contour lointain de référence.
   bool _confirms(Quad detected, DateTime now) {
