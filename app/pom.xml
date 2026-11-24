@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>fr.notedefrais</groupId>
+        <artifactId>note-de-frais</artifactId>
+        <version>0.1.0</version>
+    </parent>
+
+    <!-- Application Flutter pilotée par Maven (le SDK Flutter doit être dans le PATH) :
+         generate-sources → flutter pub get ; test → flutter analyze puis flutter test ;
+         package → flutter build ${flutter.target} (mode ${flutter.mode}) ; clean → flutter clean.
+         Propriétés : -Dflutter.target=apk|appbundle|linux…, -Dflutter.mode=release|profile|debug,
+         -Dapi.url=https://… (transmis en dart-define API_URL), -DskipTests. -->
+    <artifactId>note-de-frais-app</artifactId>
+    <packaging>pom</packaging>
+    <name>note-de-frais-app</name>
+
+    <properties>
+        <flutter.executable>flutter</flutter.executable>
+        <flutter.target>apk</flutter.target>
+        <flutter.mode>release</flutter.mode>
+        <!-- Vide : l'app garde l'adresse de son type de build (lib/data/server_config.dart). -->
+        <api.url></api.url>
+        <skipTests>false</skipTests>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <configuration>
+                    <executable>${flutter.executable}</executable>
+                    <workingDirectory>${project.basedir}</workingDirectory>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>flutter-clean</id>
+                        <phase>clean</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <arguments><argument>clean</argument></arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>flutter-pub-get</id>
+                        <phase>generate-sources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <arguments>
+                                <argument>pub</argument>
+                                <argument>get</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>flutter-analyze</id>
+                        <phase>test</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <skip>${skipTests}</skip>
+                            <arguments><argument>analyze</argument></arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>flutter-test</id>
+                        <phase>test</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <skip>${skipTests}</skip>
+                            <arguments><argument>test</argument></arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>flutter-build</id>
+                        <phase>package</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <arguments>
+                                <argument>build</argument>
+                                <argument>${flutter.target}</argument>
+                                <argument>--${flutter.mode}</argument>
+                                <argument>--dart-define=API_URL=${api.url}</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

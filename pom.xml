@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Build complet : serveur (server/) et application Flutter (app/).
+         `mvn verify` : tests serveur, analyse + tests Flutter, APK release.
+         `mvn -DskipFlutter verify` : serveur seul (sans SDK Flutter). -->
+    <groupId>fr.notedefrais</groupId>
+    <artifactId>note-de-frais</artifactId>
+    <version>0.1.0</version>
+    <packaging>pom</packaging>
+    <name>note-de-frais</name>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+    </properties>
+
+    <modules>
+        <module>server</module>
+    </modules>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec-maven-plugin.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <profiles>
+        <!-- Le module app n'est construit que sans -DskipFlutter. -->
+        <profile>
+            <id>flutter</id>
+            <activation>
+                <property>
+                    <name>!skipFlutter</name>
+                </property>
+            </activation>
+            <modules>
+                <module>app</module>
+            </modules>
+        </profile>
+    </profiles>
+</project>

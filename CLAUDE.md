@@ -12,6 +12,13 @@ Application de notes de frais :
 - Les suppressions sont logiques (`deleted`) pour se propager aux autres appareils.
 
 ## Commandes
+- Tout (racine) : `mvn verify` — tests serveur, `flutter analyze` + `flutter test`, APK release
+  (`app/build/app/outputs/flutter-apk/app-release.apk`, signé avec la clé debug sans `android/key.properties`).
+  Options : `-DskipFlutter` (serveur seul, sans SDK Flutter), `-DskipTests`,
+  `-Dflutter.target=apk|appbundle|linux`, `-Dflutter.mode=release|profile|debug`,
+  `-Dapi.url=https://…` (→ `--dart-define=API_URL=…`). `mvn clean` lance aussi `flutter clean`.
+- Serveur seul : `mvn -DskipFlutter verify` ; lancement depuis la racine :
+  `ANTHROPIC_API_KEY=... mvn -pl server spring-boot:run`
 - Serveur, tests : `cd server && mvn -q test`
 - Serveur, lancement : `cd server && ANTHROPIC_API_KEY=... mvn spring-boot:run`
 - App, tests : `cd app && flutter test`
