@@ -10,7 +10,7 @@ import 'document_api.dart';
 import 'document_sync_service.dart';
 import '../../shared/data/file_store.dart';
 import '../../shared/data/local_store.dart';
-import '../../expense/data/sync_service.dart';
+import '../../shared/data/sync_report.dart';
 
 /// Page tout juste scannée : photo brute, contour choisi, filtre et rendu calculé sur l'appareil.
 final class PageCapture {

@@ -6,7 +6,7 @@ import '../data/auth_api.dart';
 import '../../document/data/document_repository.dart';
 import '../../expense/data/expense_api.dart';
 import '../../expense/data/expense_repository.dart';
-import '../../expense/data/sync_service.dart';
+import '../../shared/data/sync_report.dart';
 import '../domain/account.dart';
 import '../../shared/ui/format.dart';
 

@@ -13,6 +13,7 @@ import 'expense_api.dart';
 import '../../shared/data/file_store.dart';
 import '../../shared/data/local_store.dart';
 import 'sync_service.dart';
+import '../../shared/data/sync_report.dart';
 
 /// Point d'entrée de l'UI : toute action est d'abord enregistrée localement,
 /// puis la synchronisation est déclenchée (et rejouée plus tard si hors-ligne).

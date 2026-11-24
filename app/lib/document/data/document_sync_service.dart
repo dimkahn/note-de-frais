@@ -7,7 +7,7 @@ import 'document_api.dart';
 import '../../shared/data/file_store.dart';
 import '../../shared/data/image_types.dart';
 import '../../shared/data/local_store.dart';
-import '../../expense/data/sync_service.dart';
+import '../../shared/data/sync_report.dart';
 
 /// Synchronisation rejouable des documents, sur le modèle de celle des dépenses : les changements
 /// locaux partent d'abord (l'appareil fait foi tant qu'ils ne sont pas envoyés), puis les
