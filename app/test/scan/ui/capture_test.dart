@@ -230,4 +230,69 @@ void main() {
       expect([for (final p in (await done)!.pages) p.photoPath], [p1]);
     },
   );
+
+  Future<void> goBack(WidgetTester tester) async {
+    await tester.pageBack();
+    await settleRealAsync(tester);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'retour depuis la revue d\'un document : le scanner se rouvre, les pages restent',
+    (tester) async {
+      final p1 = page('p1'), p2 = page('p2');
+      final done = await scanDocument(
+        tester,
+        _FakeScanner([
+          [p1],
+          [p2],
+        ]),
+      );
+
+      await goBack(tester);
+      await tester.tap(find.text('Enregistrer les 2 pages'));
+      await settleRealAsync(tester);
+
+      expect([for (final p in (await done)!.pages) p.photoPath], [p1, p2]);
+    },
+  );
+
+  testWidgets('retour puis annulation du scanner rouvert : abandon', (
+    tester,
+  ) async {
+    final done = await scanDocument(
+      tester,
+      _FakeScanner([
+        [page('p1')],
+        null,
+      ]),
+    );
+
+    await goBack(tester);
+
+    expect(await done, isNull);
+  });
+
+  testWidgets(
+    'retour depuis la revue d\'un ticket : abandon, sans rouvrir le scanner',
+    (tester) async {
+      final scanner = _FakeScanner([
+        [page('p1')],
+      ]);
+      final done = await launch(
+        tester,
+        (context) => scan(
+          context,
+          modeLocked: true,
+          pageScanner: scanner,
+          compute: _inline,
+        ),
+      );
+
+      await goBack(tester);
+
+      expect(await done, isNull);
+      expect(scanner.limits, hasLength(1));
+    },
+  );
 }

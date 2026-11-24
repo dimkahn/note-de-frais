@@ -135,12 +135,18 @@ Future<ScanCompleted?> _scanFrom(
   Compute compute,
 ) async {
   var session = ScanSession(mode);
+  // Retour arrière depuis la revue d'un document : la source est rouverte en gardant les pages ;
+  // l'abandonner à son tour abandonne le scan.
+  var reopenedAfterBack = false;
   while (context.mounted) {
     if (session.canAdd) {
-      for (final page in await source(mode)) {
+      final added = await source(mode);
+      if (added.isEmpty && reopenedAfterBack) return null;
+      for (final page in added) {
         if (session.canAdd) session = session.withPage(page);
       }
     }
+    reopenedAfterBack = false;
     if (session.pages.isEmpty || !context.mounted) return null;
     final outcome = await Navigator.push<ReviewOutcome>(
       context,
@@ -153,8 +159,12 @@ Future<ScanCompleted?> _scanFrom(
         return ScanCompleted(mode, pages);
       case ReviewContinue(session: final remaining, addMore: true):
         session = remaining;
+      case ReviewContinue(session: final remaining)
+          when mode == ScanMode.document && remaining.pages.isNotEmpty:
+        session = remaining;
+        reopenedAfterBack = true;
       case _:
-        return null; // retour arrière (ou dernière page supprimée) : abandon
+        return null; // ticket, dernière page supprimée : abandon
     }
   }
   return null;

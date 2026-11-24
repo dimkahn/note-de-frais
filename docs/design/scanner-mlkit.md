@@ -15,6 +15,9 @@ moquette…). Sur Android, la prise de vue passe par le scanner de documents de 
 2. Scanner ML Kit en mode de base (recadrer, pivoter ; pas de filtres ML Kit), sortie JPEG, import
    galerie autorisé ; limite d'une page en mode Ticket.
 3. Notre `ReviewScreen` comme aujourd'hui (filtres en vignettes, Supprimer, Ajouter → relance le scanner).
+4. Retour arrière depuis la revue d'un document : le scanner se rouvre en gardant les pages ; l'annuler
+   à son tour abandonne le scan. Après « Ajouter », une annulation ramène à la revue. Ticket : retour =
+   abandon.
 
 ## Invariants
 - **Original intact** : ML Kit ne rend pas la photo brute, seulement des pages recadrées. L'original est
