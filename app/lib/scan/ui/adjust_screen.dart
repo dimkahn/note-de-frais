@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import '../../expense/domain/expense.dart';
 import '../domain/quad.dart';
+import '../domain/rotation.dart';
 import 'corner_editor.dart';
 import '../data/document_scanner.dart';
 
@@ -17,21 +18,24 @@ final class ScanResult {
     required this.photoPath,
     required this.quad,
     required this.filter,
+    this.rotation = Rotation.none,
     required this.processedJpeg,
   });
 
   final String photoPath;
   final Quad quad;
   final ImageFilter filter;
+  final Rotation rotation;
 
-  /// Image recadrée + filtrée calculée sur l'appareil.
+  /// Image recadrée + filtrée (et pivotée) calculée sur l'appareil.
   final Uint8List processedJpeg;
 }
 
 /// Exécute un calcul lourd hors du thread d'interface (remplaçable dans les tests).
 typedef Compute = Future<T> Function<T>(T Function() work);
 
-Future<T> _isolate<T>(T Function() work) => Isolate.run(work);
+/// Calcul dans un isolate : l'interface reste fluide pendant la détection et le rendu.
+Future<T> inIsolate<T>(T Function() work) => Isolate.run(work);
 
 /// Ajustement des coins et choix du filtre, avec aperçu, comme dans une application de scan.
 class AdjustScreen extends StatefulWidget {
@@ -41,9 +45,10 @@ class AdjustScreen extends StatefulWidget {
     this.initialQuad,
     this.fallbackQuad,
     this.initialFilter = ImageFilter.enhance,
+    this.initialRotation = Rotation.none,
     this.title = 'Ajuster le cadrage',
     this.onSkip,
-    this.compute = _isolate,
+    this.compute = inIsolate,
   });
 
   final String photoPath;
@@ -54,6 +59,7 @@ class AdjustScreen extends StatefulWidget {
   /// Utilisé si rien n'est détecté sur la photo (ex. contour vu en direct par la caméra).
   final Quad? fallbackQuad;
   final ImageFilter initialFilter;
+  final Rotation initialRotation;
   final String title;
 
   /// Reprise de plusieurs pages : « Passer » remplace « Reprendre », appelle ce rappel puis ferme
@@ -74,16 +80,23 @@ class _AdjustScreenState extends State<AdjustScreen> {
   static Uint8List Function() _renderJob(
     Uint8List bytes,
     Quad quad,
-    ImageFilter filter, {
+    ImageFilter filter,
+    Rotation rotation, {
     int maxSide = 2400,
   }) =>
-      () =>
-          const DocumentScanner().render(bytes, quad, filter, maxSide: maxSide);
+      () => const DocumentScanner().render(
+        bytes,
+        quad,
+        filter,
+        rotation: rotation,
+        maxSide: maxSide,
+      );
 
   Uint8List? _bytes;
   double _aspectRatio = 3 / 4;
   Quad? _quad;
   late ImageFilter _filter = widget.initialFilter;
+  late Rotation _rotation = widget.initialRotation;
   bool _preview = false;
   Uint8List? _previewJpeg;
   bool _busy = false;
@@ -115,11 +128,11 @@ class _AdjustScreenState extends State<AdjustScreen> {
   }
 
   Future<void> _refreshPreview() async {
-    final bytes = _bytes, quad = _quad, filter = _filter;
+    final bytes = _bytes, quad = _quad, filter = _filter, rotation = _rotation;
     if (bytes == null || quad == null) return;
     final generation = ++_previewGeneration;
     final jpeg = await widget.compute(
-      _renderJob(bytes, quad, filter, maxSide: 1200),
+      _renderJob(bytes, quad, filter, rotation, maxSide: 1200),
     );
     if (mounted && generation == _previewGeneration) {
       setState(() => _previewJpeg = jpeg);
@@ -127,10 +140,12 @@ class _AdjustScreenState extends State<AdjustScreen> {
   }
 
   Future<void> _validate() async {
-    final bytes = _bytes, quad = _quad, filter = _filter;
+    final bytes = _bytes, quad = _quad, filter = _filter, rotation = _rotation;
     if (bytes == null || quad == null) return;
     setState(() => _busy = true);
-    final jpeg = await widget.compute(_renderJob(bytes, quad, filter));
+    final jpeg = await widget.compute(
+      _renderJob(bytes, quad, filter, rotation),
+    );
     if (!mounted) return;
     Navigator.pop(
       context,
@@ -138,6 +153,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
         photoPath: widget.photoPath,
         quad: quad,
         filter: filter,
+        rotation: rotation,
         processedJpeg: jpeg,
       ),
     );
@@ -153,6 +169,12 @@ class _AdjustScreenState extends State<AdjustScreen> {
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         actions: [
+          if (ready)
+            IconButton(
+              tooltip: 'Pivoter',
+              icon: const Icon(Icons.rotate_right),
+              onPressed: _rotate,
+            ),
           if (ready)
             TextButton(
               onPressed: () => setState(() => _quad = Quad.inset(0)),
@@ -247,6 +269,15 @@ class _AdjustScreenState extends State<AdjustScreen> {
               ),
             ),
     );
+  }
+
+  /// Quart de tour horaire du rendu ; l'aperçu le montre aussitôt.
+  void _rotate() {
+    setState(() {
+      _rotation = _rotation.next();
+      _preview = true;
+    });
+    _refreshPreview();
   }
 
   void _leave() {

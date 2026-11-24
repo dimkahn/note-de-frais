@@ -8,6 +8,7 @@ import 'package:note_de_frais/shared/data/local_store.dart';
 import 'package:note_de_frais/document/domain/document.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
+import 'package:note_de_frais/scan/domain/rotation.dart';
 import 'package:note_de_frais/scan/ui/adjust_screen.dart';
 import 'package:note_de_frais/scan/ui/capture.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -64,6 +65,23 @@ void main() {
 
   List<int> rendered(int index) =>
       File(repo.byId(doc.id)!.pages[index].processedPath).readAsBytesSync();
+
+  test('une page réajustée et pivotée garde sa rotation', () async {
+    await adjustDocumentPages(repo, doc.id, (page, title) async {
+      if (page.id != doc.pages.first.id) return const StopAdjusting();
+      return AdjustedPage(
+        ScanResult(
+          photoPath: page.originalPath,
+          quad: Quad.inset(0.2),
+          filter: ImageFilter.none,
+          rotation: Rotation.clockwise90,
+          processedJpeg: Uint8List.fromList([4]),
+        ),
+      );
+    });
+
+    expect(repo.byId(doc.id)!.pages.first.rotation, Rotation.clockwise90);
+  });
 
   test('propose chaque page à partir de son original, dans l\'ordre', () async {
     final asked = <(String, String)>[];

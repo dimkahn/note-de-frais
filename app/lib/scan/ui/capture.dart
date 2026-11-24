@@ -41,6 +41,7 @@ Future<Expense?> scanReceipt(
     scan.quad,
     scan.filter,
     processedJpeg: scan.processedJpeg,
+    rotation: scan.rotation,
   );
   if (context.mounted) {
     final message = !repo.withServer
@@ -76,6 +77,7 @@ Future<void> readjustReceipt(
         photoPath: original,
         initialQuad: e.corners,
         initialFilter: e.filter,
+        initialRotation: e.rotation,
       ),
     ),
   );
@@ -84,6 +86,7 @@ Future<void> readjustReceipt(
     e.id,
     scan.filter,
     corners: scan.quad,
+    rotation: scan.rotation,
     processedJpeg: scan.processedJpeg,
   );
 }
@@ -122,6 +125,7 @@ Future<List<PageCapture>> scanPages(BuildContext context) async {
         photoPath: s.photoPath,
         corners: s.quad,
         filter: s.filter,
+        rotation: s.rotation,
         processedJpeg: s.processedJpeg,
       ),
   ];
@@ -206,6 +210,7 @@ Future<PageAdjustment> adjustPageOnScreen(
         photoPath: page.originalPath,
         initialQuad: page.corners,
         initialFilter: page.filter,
+        initialRotation: page.rotation,
         title: title,
         onSkip: skippable ? () => skipped = true : null,
       ),
@@ -225,5 +230,6 @@ Future<void> _savePage(
   page.id,
   corners: scan.quad,
   filter: scan.filter,
+  rotation: scan.rotation,
   processedJpeg: scan.processedJpeg,
 );
