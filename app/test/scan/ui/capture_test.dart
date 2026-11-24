@@ -15,13 +15,19 @@ Future<T> _inline<T>(T Function() work) async => work();
 
 /// Scanner système simulé : rend tour à tour les lots de pages prévus.
 final class _FakeScanner implements PageScanner {
-  _FakeScanner(this.batches);
+  _FakeScanner(this.batches, {this.unavailableAfter});
 
   final List<List<String>?> batches;
+
+  /// Au-delà de ce nombre de passages, le scanner ne démarre plus.
+  final int? unavailableAfter;
   final limits = <int?>[];
 
   @override
   Future<List<String>?> scan({int? pageLimit}) async {
+    if (limits.length == unavailableAfter) {
+      throw const PageScannerUnavailable('échec au démarrage');
+    }
     limits.add(pageLimit);
     return batches.removeAt(0);
   }
@@ -156,6 +162,72 @@ void main() {
       final camera = tester.widget<CameraScreen>(find.byType(CameraScreen));
       expect(camera.initialMode, ScanMode.document);
       expect(camera.modeLocked, isTrue);
+    },
+  );
+
+  Future<Future<ScanCompleted?>> scanDocument(
+    WidgetTester tester,
+    PageScanner scanner,
+  ) => launch(
+    tester,
+    (context) => scan(
+      context,
+      mode: ScanMode.document,
+      modeLocked: true,
+      pageScanner: scanner,
+      compute: _inline,
+    ),
+  );
+
+  Future<void> tapAdd(WidgetTester tester) async {
+    await tester.tap(find.text('Ajouter'));
+    await settleRealAsync(tester);
+    await tester.pumpAndSettle(); // fin de la transition vers la nouvelle revue
+  }
+
+  Future<void> tapSave(WidgetTester tester) async {
+    await tester.tap(find.text('Enregistrer'));
+    await settleRealAsync(tester);
+  }
+
+  testWidgets(
+    'annuler le scanner en ajoutant des pages garde les pages déjà prises',
+    (tester) async {
+      final p1 = page('p1');
+      final done = await scanDocument(
+        tester,
+        _FakeScanner([
+          [p1],
+          null,
+        ]),
+      );
+
+      await tapAdd(tester);
+      await tapSave(tester);
+
+      expect([for (final p in (await done)!.pages) p.photoPath], [p1]);
+    },
+  );
+
+  testWidgets(
+    'scanner indisponible en ajoutant des pages : les pages déjà prises restent',
+    (tester) async {
+      final p1 = page('p1');
+      final done = await scanDocument(
+        tester,
+        _FakeScanner([
+          [p1],
+        ], unavailableAfter: 1),
+      );
+
+      await tapAdd(tester);
+
+      expect(find.byType(CameraScreen), findsNothing);
+      expect(find.text('Scanner indisponible, réessayez'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5)); // le message disparaît
+      await tester.pumpAndSettle();
+      await tapSave(tester);
+      expect([for (final p in (await done)!.pages) p.photoPath], [p1]);
     },
   );
 }

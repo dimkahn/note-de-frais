@@ -35,13 +35,27 @@ Future<ScanCompleted?> scan(
   final chosen = modeLocked ? mode : await _chooseMode(context, mode);
   if (chosen == null || !context.mounted) return null;
   if (scanner == null) return _scanFrom(context, chosen, _pickFiles, compute);
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  var firstPass = true;
+  // Indisponible d'emblée : la caméra de l'application. En cours de session : retour à la revue,
+  // sans perdre les pages déjà scannées.
+  Future<List<CapturedPage>> source(ScanMode mode) async {
+    try {
+      return await _fromScanner(scanner, mode);
+    } on PageScannerUnavailable catch (e) {
+      if (firstPass) rethrow;
+      debugPrint('$e');
+      messenger?.showSnackBar(
+        const SnackBar(content: Text('Scanner indisponible, réessayez')),
+      );
+      return const [];
+    } finally {
+      firstPass = false;
+    }
+  }
+
   try {
-    return await _scanFrom(
-      context,
-      chosen,
-      (mode) => _fromScanner(scanner, mode),
-      compute,
-    );
+    return await _scanFrom(context, chosen, source, compute);
   } on PageScannerUnavailable catch (e) {
     debugPrint('$e : caméra de l\'application à la place');
     if (!context.mounted) return null;
