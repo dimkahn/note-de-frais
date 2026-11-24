@@ -37,6 +37,9 @@ final class DocumentScanner {
   /// Contours examinés par passe (les plus grands).
   static const _maxCandidates = 10;
 
+  /// Déplacement maximal d'un coin (fraction de l'image) pour qu'un candidat soit le contour suivi.
+  static const _trackedMaxShift = 0.08;
+
   /// Écart minimal de teinte (canal b de Lab) pour tenter la passe couleur.
   static const _minWarmthRange = 6.0;
 
@@ -73,12 +76,16 @@ final class DocumentScanner {
   /// Contour dans un plan de luminance brut (plan Y du flux caméra), dans le repère du capteur.
   /// [blueChroma] : plan U (Cb) déjà échantillonné à la taille réduite de la luminance
   /// (cf. [sampleChroma]) ; il permet la passe couleur (papier crème sur feuille blanche).
+  /// [tracked] : contour suivi sur les images précédentes, dans le même repère ; un candidat proche
+  /// est préféré aux autres, pour ne pas alterner d'une image à l'autre entre le ticket et la
+  /// feuille ou la table (propre au flux caméra : le serveur n'a pas d'équivalent).
   Quad? detectInLuma(
     Uint8List plane, {
     required int width,
     required int height,
     required int bytesPerRow,
     Uint8List? blueChroma,
+    Quad? tracked,
   }) {
     final (small, w, h) = downsampleLuma(
       plane,
@@ -94,7 +101,7 @@ final class DocumentScanner {
     // Jaune ⇔ peu de bleu : la « chaleur » du papier est l'inverse de Cb.
     final warmth = cb == null ? null : cv.bitwiseNOT(cb);
     try {
-      return _detectIn(gray, warmth: warmth);
+      return _detectIn(gray, warmth: warmth, tracked: tracked);
     } finally {
       gray.dispose();
       cb?.dispose();
@@ -163,7 +170,9 @@ final class DocumentScanner {
   /// seuils d'Otsu), bords faibles (fond clair : contraste égalisé, seuils bas), puis couleur
   /// (canal jaune-bleu : ticket crème sur feuille blanche). Un contour qui touche les bords de
   /// l'image est probablement la surface sous le document : il ne sert qu'en dernier recours.
-  Quad? _detectIn(cv.Mat gray, {cv.Mat? warmth}) {
+  /// Avec un contour [tracked], toutes les passes sont parcourues à la recherche d'un candidat
+  /// proche ; à défaut, le choix est le même que sans.
+  Quad? _detectIn(cv.Mat gray, {cv.Mat? warmth, Quad? tracked}) {
     final blurred = cv.gaussianBlur(gray, (5, 5), 0);
     try {
       final passes = <(cv.Mat Function(), bool)>[
@@ -171,14 +180,20 @@ final class DocumentScanner {
         (() => _weakEdges(blurred), true),
         if (warmth != null) (() => _colourRegion(warmth), false),
       ];
+      Quad? first;
       Quad? fallback;
       for (final (pass, mayFallBack) in passes) {
         for (final quad in _quads(pass(), gray)) {
-          if (!_touchesBorder(quad)) return quad;
-          if (mayFallBack) fallback ??= quad;
+          if (_touchesBorder(quad)) {
+            if (mayFallBack) fallback ??= quad;
+            continue;
+          }
+          if (tracked == null) return quad;
+          if (quad.maxShift(tracked) <= _trackedMaxShift) return quad;
+          first ??= quad;
         }
       }
-      return fallback;
+      return first ?? fallback;
     } finally {
       blurred.dispose();
     }
@@ -416,6 +431,7 @@ Future<Quad?> detectInBackground(
   required int width,
   required int height,
   Uint8List? blueChroma,
+  Quad? tracked,
 }) => Isolate.run(
   () => const DocumentScanner().detectInLuma(
     luma,
@@ -423,6 +439,7 @@ Future<Quad?> detectInBackground(
     height: height,
     bytesPerRow: width,
     blueChroma: blueChroma,
+    tracked: tracked,
   ),
 );
 

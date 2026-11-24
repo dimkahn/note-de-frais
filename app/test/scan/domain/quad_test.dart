@@ -115,4 +115,17 @@ void main() {
     expect(q.topLeft, const Corner(0.1, 0.1));
     expect(q.bottomRight, const Corner(0.9, 0.9));
   });
+
+  test('une rotation négative défait la rotation inverse (retour au repère du capteur)', () {
+    const q = Quad(
+      Corner(0.2, 0.1),
+      Corner(0.8, 0.15),
+      Corner(0.75, 0.9),
+      Corner(0.25, 0.85),
+    );
+
+    final back = q.rotated(90).rotated(-90);
+
+    expect(back.maxShift(q), closeTo(0, 1e-9));
+  });
 }

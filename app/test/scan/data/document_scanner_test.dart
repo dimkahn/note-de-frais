@@ -34,6 +34,28 @@ Uint8List photoOfReceipt(int w, int h, List<(int, int)> corners) {
   return bytes;
 }
 
+/// Luminance brute (flux caméra) : table sombre, feuille grise et, posé dessus, un ticket blanc.
+/// Deux contours plausibles : la feuille (la plus grande) et le ticket.
+(Uint8List, int, int) lumaOfReceiptOnSheet() {
+  const w = 1000, h = 1400;
+  final img = cv.Mat.fromScalar(h, w, cv.MatType.CV_8UC1, cv.Scalar.all(30));
+  cv.rectangle(
+    img,
+    cv.Rect(100, 100, 800, 1200),
+    cv.Scalar.all(130),
+    thickness: -1,
+  );
+  cv.rectangle(
+    img,
+    cv.Rect(300, 300, 400, 800),
+    cv.Scalar.all(235),
+    thickness: -1,
+  );
+  final luma = Uint8List.fromList(img.data);
+  img.dispose();
+  return (luma, w, h);
+}
+
 /// Photo réaliste sur fond clair : éclairage en dégradé, bruit de capteur, ticket peu contrasté.
 Uint8List photoOnLightBackground(
   int w,
@@ -342,6 +364,45 @@ void main() {
 
       expect(quad, isNotNull);
       expect(quad!.topLeft.x, closeTo(0.24, 0.03));
+    });
+  });
+
+  group('cohérence entre images du flux', () {
+    final (luma, w, h) = lumaOfReceiptOnSheet();
+    const sheet = Quad(
+      Corner(0.1, 1 / 14),
+      Corner(0.9, 1 / 14),
+      Corner(0.9, 13 / 14),
+      Corner(0.1, 13 / 14),
+    );
+    const receipt = Quad(
+      Corner(0.3, 3 / 14),
+      Corner(0.7, 3 / 14),
+      Corner(0.7, 11 / 14),
+      Corner(0.3, 11 / 14),
+    );
+
+    test('sans contour suivi, retient le plus grand (la feuille)', () {
+      final quad = scanner.detectInLuma(
+        luma,
+        width: w,
+        height: h,
+        bytesPerRow: w,
+      );
+
+      expect(quad!.maxShift(sheet), lessThan(0.02));
+    });
+
+    test('préfère le candidat proche du contour suivi (le ticket)', () {
+      final quad = scanner.detectInLuma(
+        luma,
+        width: w,
+        height: h,
+        bytesPerRow: w,
+        tracked: receipt,
+      );
+
+      expect(quad!.maxShift(receipt), lessThan(0.02));
     });
   });
 

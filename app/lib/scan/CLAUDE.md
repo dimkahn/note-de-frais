@@ -7,7 +7,8 @@ Contrepartie serveur : `server/…/receipt/`. Conception : `docs/design/scanner.
   (pages prises, immuable), `Stability` (déclenchement auto), `QuadSmoother` (contour affiché en direct : lissé, tient bon
   aux ratés et aux images isolées), `ReceiptParser` (devine total, TVA, date,
   devise, commerçant), `ReceiptTextReader` (frontière OCR).
-- `data/` : `DocumentScanner` (OpenCV sur l'appareil, paramètres alignés sur `OpenCvImageProcessor` serveur),
+- `data/` : `DocumentScanner` (OpenCV sur l'appareil, paramètres alignés sur `OpenCvImageProcessor` serveur ;
+  en direct, préfère le candidat proche du contour suivi),
   `MlkitReceiptTextReader` + `text_rows` (ML Kit, sans réseau).
 - `ui/` — parcours inspiré d'Adobe Scan (`docs/design/parcours-de-scan.md`) :
   `CameraScreen` (carrousel `ScanModeSelector`, pile `PageStack`, pas de revue par prise) →

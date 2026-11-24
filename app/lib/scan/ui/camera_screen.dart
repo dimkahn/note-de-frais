@@ -152,7 +152,14 @@ class _CameraScreenState extends State<CameraScreen>
     }
     final (small, width, height) = sample;
     final rotation = _controller?.description.sensorOrientation ?? 90;
-    detectInBackground(small, width: width, height: height, blueChroma: chroma)
+    detectInBackground(
+          small,
+          width: width,
+          height: height,
+          blueChroma: chroma,
+          // Contour affiché, ramené dans le repère du capteur.
+          tracked: _liveQuad?.rotated(-rotation),
+        )
         .then(
           (quad) => _onDetected(quad?.rotated(rotation)),
           onError: _onDetectionError,
