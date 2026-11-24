@@ -3,7 +3,7 @@ package fr.notedefrais.expense;
 import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseSpecs.Criteria;
-import fr.notedefrais.imaging.Quad;
+import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
 import fr.notedefrais.storage.ImageTypes;
 import fr.notedefrais.storage.StorageException;

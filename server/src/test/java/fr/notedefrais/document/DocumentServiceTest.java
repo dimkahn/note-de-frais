@@ -9,7 +9,7 @@ import fr.notedefrais.account.Quota;
 import fr.notedefrais.account.QuotaExceededException;
 import fr.notedefrais.expense.ExpenseRepository;
 import fr.notedefrais.expense.ImageFilter;
-import fr.notedefrais.imaging.Quad;
+import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.LocalFileStorage;
 import java.nio.file.Path;
 import java.time.Instant;

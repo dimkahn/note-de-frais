@@ -1,13 +1,13 @@
 package fr.notedefrais.expense;
 
 import fr.notedefrais.account.AccountLimits;
-import fr.notedefrais.extraction.ExtractionException;
-import fr.notedefrais.extraction.ReceiptExtraction;
-import fr.notedefrais.extraction.ReceiptExtractor;
-import fr.notedefrais.extraction.ReceiptFields;
-import fr.notedefrais.imaging.ImageProcessor;
-import fr.notedefrais.imaging.ProcessedImage;
-import fr.notedefrais.imaging.Quad;
+import fr.notedefrais.receipt.extraction.ExtractionException;
+import fr.notedefrais.receipt.extraction.ReceiptExtraction;
+import fr.notedefrais.receipt.extraction.ReceiptExtractor;
+import fr.notedefrais.receipt.extraction.ReceiptFields;
+import fr.notedefrais.receipt.imaging.ImageProcessor;
+import fr.notedefrais.receipt.imaging.ProcessedImage;
+import fr.notedefrais.receipt.imaging.Quad;
 import fr.notedefrais.storage.FileStorage;
 import java.util.UUID;
 import org.slf4j.Logger;

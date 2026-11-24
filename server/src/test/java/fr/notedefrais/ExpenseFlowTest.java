@@ -7,7 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import fr.notedefrais.imaging.TestImages;
+import fr.notedefrais.receipt.imaging.TestImages;
 import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
