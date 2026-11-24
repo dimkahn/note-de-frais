@@ -64,4 +64,16 @@ void main() {
       expect(shown, Quad.inset(0.3));
     },
   );
+
+  test(
+    'des contours lointains qui changent à chaque image ne sont pas affichés',
+    () {
+      final s = QuadSmoother(dropout: const Duration(milliseconds: 400));
+      s.update(doc, at(0));
+      s.update(Quad.inset(0.3), at(100));
+
+      expect(s.update(Quad.inset(0.4), at(500)), isNull);
+      expect(s.update(Quad.inset(0.4), at(600)), Quad.inset(0.4));
+    },
+  );
 }

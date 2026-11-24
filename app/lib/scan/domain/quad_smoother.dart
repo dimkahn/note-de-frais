@@ -22,6 +22,10 @@ final class QuadSmoother {
   Quad? _shown;
   DateTime? _seen;
 
+  /// Dernier contour lointain vu (et quand) : un contour lointain n'est retenu que s'il se confirme.
+  Quad? _far;
+  DateTime? _farSeen;
+
   /// Contour à afficher après la détection [detected] (nul si rien trouvé sur cette image).
   Quad? update(Quad? detected, DateTime now) {
     final shown = _shown;
@@ -30,16 +34,29 @@ final class QuadSmoother {
       if (lost) _shown = null;
       return _shown;
     }
-    if (shown == null) {
-      _shown = detected;
-    } else if (detected.maxShift(shown) <= jump) {
-      _shown = shown.lerpTo(detected, follow);
-    } else if (lost) {
-      _shown = detected;
-    } else {
-      return shown;
+    final elsewhere = shown != null && detected.maxShift(shown) > jump;
+    if (elsewhere) {
+      // Autre objet ou vrai mouvement : ignoré tant que le contour affiché est encore vu.
+      final confirmed = _confirms(detected, now);
+      if (!lost) return shown;
+      if (!confirmed) return _shown = null;
     }
+    _shown = shown == null || elsewhere
+        ? detected
+        : shown.lerpTo(detected, follow);
+    _far = null;
     _seen = now;
     return _shown;
+  }
+
+  /// Vrai si [detected] est proche du contour lointain vu juste avant (sans trou de plus de
+  /// [dropout]) ; [detected] devient le contour lointain de référence.
+  bool _confirms(Quad detected, DateTime now) {
+    final far = _far, farSeen = _farSeen;
+    _far = detected;
+    _farSeen = now;
+    return far != null &&
+        now.difference(farSeen!) <= dropout &&
+        detected.maxShift(far) <= jump;
   }
 }

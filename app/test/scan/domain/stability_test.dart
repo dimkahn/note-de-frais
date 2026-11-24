@@ -44,6 +44,28 @@ void main() {
     },
   );
 
+  test(
+    'un autre contour ne crédite l\'attente que depuis qu\'il est immobile',
+    () {
+      final t = tracker();
+      t.update(doc, at(0));
+      t.update(Quad.inset(0.3), at(100));
+      t.update(Quad.inset(0.33), at(300));
+      t.update(Quad.inset(0.33), at(600));
+
+      expect(t.update(Quad.inset(0.33), at(1200)), isFalse);
+      expect(t.update(Quad.inset(0.33), at(1300)), isTrue);
+    },
+  );
+
+  test('un autre contour revu après un long trou ne crédite rien', () {
+    final t = tracker();
+    t.update(doc, at(0));
+    t.update(Quad.inset(0.3), at(100));
+
+    expect(t.update(Quad.inset(0.3), at(2000)), isFalse);
+  });
+
   test('après une perte durable, l\'attente repart de zéro', () {
     final t = tracker();
     t.update(doc, at(0));
@@ -97,6 +119,7 @@ void main() {
     t.update(null, at(200));
 
     t.update(Quad.inset(0.3), at(400));
+    t.update(Quad.inset(0.3), at(700));
 
     expect(t.update(Quad.inset(0.3), at(1000)), isFalse);
     expect(t.update(Quad.inset(0.3), at(1400)), isTrue);

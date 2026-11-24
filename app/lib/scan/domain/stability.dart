@@ -19,8 +19,11 @@ final class StabilityTracker {
   /// relancer l'attente : la détection sur le flux vidéo rate souvent une image isolée.
   final Duration dropout;
 
-  /// Depuis quand un autre contour est vu sans interruption (il remplacera le contour suivi).
+  /// Autre contour en lice pour remplacer le contour suivi : immobile depuis [_otherSince], vu
+  /// sans trou de plus de [dropout] (dernière fois : [_otherSeen]).
+  Quad? _other;
   DateTime? _otherSince;
+  DateTime? _otherSeen;
 
   Quad? _anchor;
   DateTime? _since;
@@ -44,7 +47,7 @@ final class StabilityTracker {
       return false;
     }
     if (_anchor != null && quad.maxShift(_anchor!) > tolerance) {
-      _otherSince ??= now;
+      _watchOther(quad, now);
       if (now.difference(_seen!) <= dropout) return false;
       _anchor = null;
     }
@@ -52,12 +55,24 @@ final class StabilityTracker {
       _anchor = quad;
       _since = _otherSince ?? now;
     }
+    _other = null;
     _otherSince = null;
     _seen = now;
     _last = now;
     if (_fired || now.difference(_since!) < holdFor) return false;
     _fired = true;
     return true;
+  }
+
+  void _watchOther(Quad quad, DateTime now) {
+    final other = _other;
+    if (other == null ||
+        quad.maxShift(other) > tolerance ||
+        now.difference(_otherSeen!) > dropout) {
+      _other = quad;
+      _otherSince = now;
+    }
+    _otherSeen = now;
   }
 
   void reset() {
@@ -70,6 +85,7 @@ final class StabilityTracker {
     _anchor = null;
     _since = null;
     _last = null;
+    _other = null;
     _otherSince = null;
   }
 }
