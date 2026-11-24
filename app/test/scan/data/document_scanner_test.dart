@@ -34,23 +34,14 @@ Uint8List photoOfReceipt(int w, int h, List<(int, int)> corners) {
   return bytes;
 }
 
-/// Luminance brute (flux caméra) : table sombre, feuille grise et, posé dessus, un ticket blanc.
-/// Deux contours plausibles : la feuille (la plus grande) et le ticket.
-(Uint8List, int, int) lumaOfReceiptOnSheet() {
+/// Luminance brute (flux caméra) 1000 x 1400 : table sombre et rectangles pleins empilés
+/// (rectangle, gris), dessinés dans l'ordre.
+(Uint8List, int, int) lumaOfStackedRects(List<(cv.Rect, int)> rects) {
   const w = 1000, h = 1400;
   final img = cv.Mat.fromScalar(h, w, cv.MatType.CV_8UC1, cv.Scalar.all(30));
-  cv.rectangle(
-    img,
-    cv.Rect(100, 100, 800, 1200),
-    cv.Scalar.all(130),
-    thickness: -1,
-  );
-  cv.rectangle(
-    img,
-    cv.Rect(300, 300, 400, 800),
-    cv.Scalar.all(235),
-    thickness: -1,
-  );
+  for (final (rect, grey) in rects) {
+    cv.rectangle(img, rect, cv.Scalar.all(grey.toDouble()), thickness: -1);
+  }
   final luma = Uint8List.fromList(img.data);
   img.dispose();
   return (luma, w, h);
@@ -368,7 +359,11 @@ void main() {
   });
 
   group('cohérence entre images du flux', () {
-    final (luma, w, h) = lumaOfReceiptOnSheet();
+    // Feuille grise et, posé dessus, un ticket blanc : deux contours plausibles.
+    final (luma, w, h) = lumaOfStackedRects([
+      (cv.Rect(100, 100, 800, 1200), 130),
+      (cv.Rect(300, 300, 400, 800), 235),
+    ]);
     const sheet = Quad(
       Corner(0.1, 1 / 14),
       Corner(0.9, 1 / 14),
@@ -404,6 +399,30 @@ void main() {
 
       expect(quad!.maxShift(receipt), lessThan(0.02));
     });
+  });
+
+  test('entre plusieurs candidats proches du contour suivi, retient le plus proche', () {
+    // Ticket blanc dans un cadre gris à peine plus grand : les deux sont proches du ticket.
+    final (luma, w, h) = lumaOfStackedRects([
+      (cv.Rect(300, 300, 400, 800), 160),
+      (cv.Rect(330, 330, 340, 740), 235),
+    ]);
+    const inner = Quad(
+      Corner(0.33, 330 / 1400),
+      Corner(0.67, 330 / 1400),
+      Corner(0.67, 1070 / 1400),
+      Corner(0.33, 1070 / 1400),
+    );
+
+    final quad = scanner.detectInLuma(
+      luma,
+      width: w,
+      height: h,
+      bytesPerRow: w,
+      tracked: inner,
+    );
+
+    expect(quad!.maxShift(inner), lessThan(0.015));
   });
 
   group('rendu', () {

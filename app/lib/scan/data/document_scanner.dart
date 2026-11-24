@@ -170,7 +170,7 @@ final class DocumentScanner {
   /// seuils d'Otsu), bords faibles (fond clair : contraste égalisé, seuils bas), puis couleur
   /// (canal jaune-bleu : ticket crème sur feuille blanche). Un contour qui touche les bords de
   /// l'image est probablement la surface sous le document : il ne sert qu'en dernier recours.
-  /// Avec un contour [tracked], toutes les passes sont parcourues à la recherche d'un candidat
+  /// Avec un contour [tracked], la première passe qui trouve des candidats proches donne le plus
   /// proche ; à défaut, le choix est le même que sans.
   Quad? _detectIn(cv.Mat gray, {cv.Mat? warmth, Quad? tracked}) {
     final blurred = cv.gaussianBlur(gray, (5, 5), 0);
@@ -183,15 +183,22 @@ final class DocumentScanner {
       Quad? first;
       Quad? fallback;
       for (final (pass, mayFallBack) in passes) {
+        Quad? closest;
+        var closestShift = _trackedMaxShift;
         for (final quad in _quads(pass(), gray)) {
           if (_touchesBorder(quad)) {
             if (mayFallBack) fallback ??= quad;
             continue;
           }
           if (tracked == null) return quad;
-          if (quad.maxShift(tracked) <= _trackedMaxShift) return quad;
           first ??= quad;
+          final shift = quad.maxShift(tracked);
+          if (shift <= closestShift) {
+            closest = quad;
+            closestShift = shift;
+          }
         }
+        if (closest != null) return closest;
       }
       return first ?? fallback;
     } finally {
