@@ -122,11 +122,16 @@ class _Appear extends StatelessWidget {
   final bool animate;
   final Widget child;
 
+  /// Le même widget enveloppe toujours la tuile : une reconstruction en cours d'animation
+  /// (fin de synchro, lecture du ticket…) la laisse aller jusqu'au bout. Seul le premier
+  /// affichage décide d'où elle part.
   @override
   Widget build(BuildContext context) {
-    if (!animate || MediaQuery.disableAnimationsOf(context)) return child;
+    final from = animate && !MediaQuery.disableAnimationsOf(context)
+        ? 0.0
+        : 1.0;
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0, end: 1),
+      tween: Tween(begin: from, end: 1),
       duration: const Duration(milliseconds: 420),
       curve: Curves.easeOutBack,
       child: child,

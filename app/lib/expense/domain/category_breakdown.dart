@@ -15,14 +15,16 @@ final class CategoryShare {
   final double fraction;
 }
 
-/// Répartition du total par type, du plus gros au plus petit. `null` s'il n'y a aucun montant,
+/// Répartition du total par type, du plus gros au plus petit (montants positifs seulement).
+/// `null` s'il n'y a aucun montant,
 /// ou plusieurs devises : on n'additionne jamais des devises différentes.
 List<CategoryShare>? categoryBreakdown(List<Expense> expenses) {
   final cents = <ExpenseCategory?, int>{};
   final currencies = <String?>{};
   for (final e in expenses) {
     final amount = e.amountTotal == null ? null : parseCents(e.amountTotal!);
-    if (amount == null) continue;
+    // Sans montant ou remboursement : hors répartition.
+    if (amount == null || amount <= 0) continue;
     currencies.add(e.currency);
     cents.update(e.category, (c) => c + amount, ifAbsent: () => amount);
   }

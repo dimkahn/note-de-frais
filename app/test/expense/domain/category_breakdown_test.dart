@@ -68,4 +68,16 @@ void main() {
     expect(categoryBreakdown([_e('a', ExpenseCategory.hotel, null)]), isNull);
     expect(categoryBreakdown(const []), isNull);
   });
+
+  test('ignore les montants négatifs (remboursements) dans la répartition', () {
+    final expenses = [
+      _e('a', ExpenseCategory.hotel, '90.00'),
+      _e('b', ExpenseCategory.train, '-30.00'),
+    ];
+
+    final shares = categoryBreakdown(expenses)!;
+
+    expect(shares.single.category, ExpenseCategory.hotel);
+    expect(shares.single.fraction, 1.0);
+  });
 }

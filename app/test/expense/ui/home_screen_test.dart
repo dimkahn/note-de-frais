@@ -122,6 +122,50 @@ void main() {
     expect(find.text('110,00 €'), findsWidgets);
   });
 
+  testWidgets(
+    'une dépense qui arrive apparaît en douceur, même si la liste se reconstruit',
+    (tester) async {
+      await pumpHome(tester, [
+        expense(
+          'a',
+          'Le Bistrot',
+          ExpenseCategory.restaurant,
+          'Paris',
+          '20.00',
+        ),
+      ]);
+      double opacityOf(String merchant) => tester
+          .widget<Opacity>(
+            find
+                .ancestor(
+                  of: find.text(merchant),
+                  matching: find.byType(Opacity),
+                )
+                .first,
+          )
+          .opacity;
+
+      await tester.runAsync(() async {
+        await store.save(
+          expense('b', 'Ibis', ExpenseCategory.hotel, 'Lyon', '90.00'),
+        );
+        await repo.load();
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      final early = opacityOf('Ibis');
+      await tester.runAsync(
+        repo.load,
+      ); // autre notification pendant l'animation
+      await tester.pump(const Duration(milliseconds: 100));
+      final later = opacityOf('Ibis');
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(early, lessThan(1));
+      expect(later, allOf(greaterThan(early), lessThan(1)));
+      expect(opacityOf('Ibis'), 1);
+    },
+  );
+
   testWidgets('montre la part de chaque type dans le total', (tester) async {
     await pumpHome(tester, [
       expense('a', 'Le Bistrot', ExpenseCategory.restaurant, 'Paris', '20.00'),
