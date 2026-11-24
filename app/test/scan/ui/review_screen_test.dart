@@ -197,6 +197,66 @@ void main() {
 
     await tapTool(tester, 'Ajouter');
 
-    expect(((await outcome)! as ReviewContinue).session.pages, hasLength(2));
+    final more = (await outcome)! as ReviewContinue;
+    expect(more.session.pages, hasLength(2));
+    expect(more.addMore, isTrue);
   });
+
+  testWidgets(
+    'revenir en arrière sur un ticket le reprend : la page est abandonnée',
+    (tester) async {
+      final outcome = await open(tester, session(ScanMode.ticket, 1));
+
+      await tester.pageBack();
+      await settleRealAsync(tester);
+
+      final back = (await outcome)! as ReviewContinue;
+      expect(back.session.pages, isEmpty);
+      expect(back.addMore, isFalse);
+    },
+  );
+
+  testWidgets('revenir en arrière sur un document garde les pages prises', (
+    tester,
+  ) async {
+    final outcome = await open(tester, session(ScanMode.document, 2));
+
+    await tester.pageBack();
+    await settleRealAsync(tester);
+
+    final back = (await outcome)! as ReviewContinue;
+    expect(back.session.pages, hasLength(2));
+    expect(back.addMore, isFalse);
+  });
+
+  testWidgets(
+    'un échec à l\'enregistrement est signalé et l\'écran reste utilisable',
+    (tester) async {
+      var failing = false;
+      Future<T> compute<T>(T Function() work) async {
+        if (failing) throw StateError('rendu impossible');
+        return work();
+      }
+
+      final outcome = await open(
+        tester,
+        session(ScanMode.ticket, 1),
+        compute: compute,
+      );
+      failing = true;
+      await tapSave(tester);
+
+      expect(find.textContaining('Enregistrement impossible'), findsOneWidget);
+      final button = tester.widget<FilledButton>(
+        find.ancestor(
+          of: find.textContaining('Enregistrer'),
+          matching: find.byWidgetPredicate((w) => w is FilledButton),
+        ),
+      );
+      expect(button.onPressed, isNotNull);
+      failing = false;
+      await tapSave(tester);
+      expect(await outcome, isA<ReviewSaved>());
+    },
+  );
 }

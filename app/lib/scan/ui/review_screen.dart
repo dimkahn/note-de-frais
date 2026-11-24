@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../expense/domain/expense.dart';
 import '../data/document_scanner.dart';
 import '../domain/quad.dart';
+import '../domain/rotation.dart';
 import '../domain/scan_session.dart';
 import 'adjust_screen.dart';
 
@@ -23,9 +24,12 @@ final class ReviewSaved extends ReviewOutcome {
 
 /// Retour à la caméra avec les pages restantes (ajout, retour, dernière page supprimée).
 final class ReviewContinue extends ReviewOutcome {
-  const ReviewContinue(this.session);
+  const ReviewContinue(this.session, {this.addMore = false});
 
   final ScanSession session;
+
+  /// « Ajouter » : l'utilisateur veut d'autres pages (sinon : retour arrière).
+  final bool addMore;
 }
 
 /// Revue des pages prises : une page en grand (glisser pour changer), outils en bas,
@@ -78,9 +82,13 @@ class _ReviewScreenState extends State<ReviewScreen> {
   bool _showFilters = false;
   bool _saving = false;
 
-  final _photos = <String, Uint8List>{};
+  /// Dernier échec d'enregistrement, affiché au-dessus du bouton (ne le masque pas).
+  String? _error;
+
+  // Aperçus des pages de la session (clé : la page elle-même, purgés à chaque changement) et
+  // vignettes de filtre de la page courante (clé : ce dont le rendu dépend, filtre compris).
   final _previews = Map<CapturedPage, Uint8List>.identity();
-  final _thumbs = <(CapturedPage, ImageFilter), Uint8List>{};
+  final _thumbs = <_ThumbKey, Uint8List>{};
 
   CapturedPage get _page => _session.pages[_index];
 
@@ -96,13 +104,26 @@ class _ReviewScreenState extends State<ReviewScreen> {
     super.dispose();
   }
 
-  Future<Uint8List> _photo(String path) async =>
-      _photos[path] ??= await File(path).readAsBytes();
+  // Lue à la demande : garder en mémoire les photos pleine définition d'un long document
+  // coûterait des centaines de Mo.
+  static Future<Uint8List> _photo(String path) => File(path).readAsBytes();
+
+  static _ThumbKey _thumbKey(CapturedPage page, ImageFilter filter) =>
+      (page.photoPath, page.corners, page.rotation, filter);
+
+  int _indexOf(CapturedPage page) =>
+      _session.pages.indexWhere((p) => identical(p, page));
+
+  /// Nouvelle session : les aperçus des pages qui n'y sont plus sont oubliés.
+  void _setSession(ScanSession session) {
+    _session = session;
+    _previews.removeWhere((page, _) => _indexOf(page) < 0);
+  }
 
   /// Contour de la page : celui choisi, sinon détecté sur la photo, sinon vu en direct,
-  /// sinon un cadre en léger retrait (comme l'écran d'ajustement).
-  Future<CapturedPage> _withCorners(int index) async {
-    final page = _session.pages[index];
+  /// sinon un cadre en léger retrait (comme l'écran d'ajustement). La page est retrouvée par
+  /// identité : elle a pu être supprimée ou modifiée pendant la détection.
+  Future<CapturedPage> _withCorners(CapturedPage page) async {
     if (page.corners != null) return page;
     final detected = await widget.compute(
       _detectJob(await _photo(page.photoPath)),
@@ -110,15 +131,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final framed = page.copyWith(
       corners: detected ?? page.hint ?? Quad.inset(0.05),
     );
-    if (mounted && identical(_session.pages[index], page)) {
-      setState(() => _session = _session.withPageReplaced(index, framed));
+    final index = mounted ? _indexOf(page) : -1;
+    if (index >= 0) {
+      setState(() => _setSession(_session.withPageReplaced(index, framed)));
     }
     return framed;
   }
 
   Future<void> _ensurePreview(int index) async {
-    final page = await _withCorners(index);
-    if (_previews.containsKey(page)) return;
+    if (index >= _session.pages.length) return;
+    final page = await _withCorners(_session.pages[index]);
+    if (_previews.containsKey(page) || _indexOf(page) < 0) return;
     final jpeg = await widget.compute(
       _renderJob(
         await _photo(page.photoPath),
@@ -127,15 +150,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
         maxSide: _previewSide,
       ),
     );
-    if (mounted) setState(() => _previews[page] = jpeg);
+    if (!mounted || _indexOf(page) < 0) return;
+    setState(() => _previews[page] = jpeg);
     if (_showFilters) await _ensureThumbs();
   }
 
+  /// La page courante sous chaque filtre ; changer de filtre ne les recalcule pas.
   Future<void> _ensureThumbs() async {
-    final page = await _withCorners(_index);
+    final page = await _withCorners(_page);
+    _thumbs.removeWhere((key, _) => key.$1 != page.photoPath);
+    final missing = [
+      for (final f in ImageFilter.values)
+        if (!_thumbs.containsKey(_thumbKey(page, f))) f,
+    ];
+    if (missing.isEmpty) return;
     final bytes = await _photo(page.photoPath);
-    for (final filter in ImageFilter.values) {
-      if (_thumbs.containsKey((page, filter))) continue;
+    for (final filter in missing) {
       final jpeg = await widget.compute(
         _renderJob(
           bytes,
@@ -146,12 +176,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       );
       if (!mounted) return;
-      setState(() => _thumbs[(page, filter)] = jpeg);
+      setState(() => _thumbs[_thumbKey(page, filter)] = jpeg);
     }
   }
 
   void _replaceCurrent(CapturedPage page) {
-    setState(() => _session = _session.withPageReplaced(_index, page));
+    setState(() => _setSession(_session.withPageReplaced(_index, page)));
     _ensurePreview(_index);
   }
 
@@ -161,7 +191,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   }
 
   Future<void> _crop() async {
-    final page = await _withCorners(_index);
+    final page = await _withCorners(_page);
     if (!mounted) return;
     final result = await Navigator.push<ScanResult>(
       context,
@@ -176,14 +206,15 @@ class _ReviewScreenState extends State<ReviewScreen> {
         ),
       ),
     );
-    if (result == null || !mounted) return;
+    final index = _indexOf(page);
+    if (result == null || !mounted || index < 0) return;
     final adjusted = page.copyWith(
       corners: result.quad,
       filter: result.filter,
       rotation: result.rotation,
     );
     setState(() {
-      _session = _session.withPageReplaced(_index, adjusted);
+      _setSession(_session.withPageReplaced(index, adjusted));
       _previews[adjusted] = result.processedJpeg;
     });
   }
@@ -207,39 +238,60 @@ class _ReviewScreenState extends State<ReviewScreen> {
     }
     final index = _index.clamp(0, remaining.pages.length - 1);
     setState(() {
-      _session = remaining;
+      _setSession(remaining);
       _index = index;
     });
     if (_pager.hasClients) _pager.jumpToPage(index);
     _ensurePreview(index);
   }
 
-  void _continue() => Navigator.pop(context, ReviewContinue(_session));
+  void _addMore() =>
+      Navigator.pop(context, ReviewContinue(_session, addMore: true));
+
+  /// Retour arrière : un ticket est repris (sa page abandonnée), un document garde ses pages.
+  void _back() => Navigator.pop(
+    context,
+    ReviewContinue(
+      _session.mode == ScanMode.ticket ? ScanSession(_session.mode) : _session,
+    ),
+  );
 
   Future<void> _save() async {
-    setState(() => _saving = true);
-    final results = <ScanResult>[];
-    for (var i = 0; i < _session.pages.length; i++) {
-      final page = await _withCorners(i);
-      final jpeg = await widget.compute(
-        _renderJob(
-          await _photo(page.photoPath),
-          page,
-          page.corners!,
-          maxSide: _fullSide,
-        ),
-      );
-      results.add(
-        ScanResult(
-          photoPath: page.photoPath,
-          quad: page.corners!,
-          filter: page.filter,
-          rotation: page.rotation,
-          processedJpeg: jpeg,
-        ),
-      );
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final results = <ScanResult>[];
+      for (final captured in [..._session.pages]) {
+        final page = await _withCorners(captured);
+        final jpeg = await widget.compute(
+          _renderJob(
+            await _photo(page.photoPath),
+            page,
+            page.corners!,
+            maxSide: _fullSide,
+          ),
+        );
+        results.add(
+          ScanResult(
+            photoPath: page.photoPath,
+            quad: page.corners!,
+            filter: page.filter,
+            rotation: page.rotation,
+            processedJpeg: jpeg,
+          ),
+        );
+      }
+      if (mounted) Navigator.pop(context, ReviewSaved(results));
+    } on Object catch (e, st) {
+      debugPrint('Enregistrement du scan impossible : $e\n$st');
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = 'Enregistrement impossible, réessayez';
+      });
     }
-    if (mounted) Navigator.pop(context, ReviewSaved(results));
   }
 
   @override
@@ -247,10 +299,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
     final count = _session.pages.length;
     final document = _session.mode == ScanMode.document;
     return PopScope(
-      // Revenir en arrière ramène à la caméra sans perdre les pages prises.
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && !_saving) _continue();
+        if (!didPop && !_saving) _back();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -276,7 +327,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
               if (_showFilters)
                 _FilterStrip(
                   thumbs: {
-                    for (final f in ImageFilter.values) f: _thumbs[(_page, f)],
+                    for (final f in ImageFilter.values)
+                      f: _thumbs[_thumbKey(_page, f)],
                   },
                   selected: _page.filter,
                   onSelected: _chooseFilter,
@@ -288,8 +340,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 onFilters: _toggleFilters,
                 filtersOpen: _showFilters,
                 onDelete: _delete,
-                onAdd: document ? _continue : null,
+                onAdd: document ? _addMore : null,
               ),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
+                    _error!,
+                    // Rouge clair : lisible sur le fond noir de la revue.
+                    style: const TextStyle(color: Color(0xFFFFB4AB)),
+                  ),
+                ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                 child: SizedBox(
@@ -531,3 +592,6 @@ class _Tool extends StatelessWidget {
     );
   }
 }
+
+/// Ce dont dépend une vignette de filtre : photo, contour, rotation et filtre.
+typedef _ThumbKey = (String, Quad?, Rotation, ImageFilter);

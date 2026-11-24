@@ -50,6 +50,9 @@ class _CameraScreenState extends State<CameraScreen>
   Quad? _liveQuad;
   bool _detectionFailed = false;
   late ScanSession _session = ScanSession(widget.initialMode);
+
+  /// Scan terminé ou abandonné : l'écran se ferme, la caméra ne doit plus repartir.
+  bool _done = false;
   final _tracker = StabilityTracker();
   bool _autoCapture = true;
   bool _analyzing = false;
@@ -192,13 +195,21 @@ class _CameraScreenState extends State<CameraScreen>
             .showSnackBar(SnackBar(content: Text('Échec de la prise : $e')));
       }
     } finally {
-      if (mounted &&
-          _controller != null &&
-          !_controller!.value.isStreamingImages) {
-        _tracker.reset();
-        await _controller!.startImageStream(_onFrame);
-      }
+      await _resumeStream();
       if (mounted) setState(() => _capturing = false);
+    }
+  }
+
+  /// Relance la détection en direct, sauf si le scan est terminé (l'écran se ferme).
+  Future<void> _resumeStream() async {
+    final controller = _controller;
+    if (_done || !mounted || controller == null) return;
+    if (controller.value.isStreamingImages) return;
+    try {
+      _tracker.reset();
+      await controller.startImageStream(_onFrame);
+    } on CameraException catch (e) {
+      debugPrint('Reprise de la détection en direct impossible : $e');
     }
   }
 
@@ -215,7 +226,8 @@ class _CameraScreenState extends State<CameraScreen>
           ];
     if (photos.isEmpty) return;
     await _add([for (final p in photos) CapturedPage(photoPath: p.path)]);
-    if (_session.pages.isNotEmpty) await _review();
+    // Un ticket est déjà passé en revue par _add ; un document y va maintenant.
+    if (_session.mode == ScanMode.document && !_done) await _review();
   }
 
   /// Ajoute les pages prises ; un ticket part aussitôt en revue, un document s'empile.
@@ -243,6 +255,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (!mounted) return;
     switch (outcome) {
       case ReviewSaved(:final pages):
+        _done = true;
         Navigator.pop(context, ScanCompleted(_session.mode, pages));
       case ReviewContinue(:final session):
         setState(() => _session = session);
@@ -263,10 +276,35 @@ class _CameraScreenState extends State<CameraScreen>
       await controller.stopImageStream();
     }
     await _review();
-    final current = _controller;
-    if (mounted && current != null && !current.value.isStreamingImages) {
-      _tracker.reset();
-      await current.startImageStream(_onFrame);
+    await _resumeStream();
+  }
+
+  /// Quitter la caméra avec des pages prises : on confirme avant de les abandonner.
+  Future<void> _confirmLeave() async {
+    final count = _session.pages.length;
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          count > 1
+              ? 'Abandonner les $count pages ?'
+              : 'Abandonner la page prise ?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Continuer'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Abandonner'),
+          ),
+        ],
+      ),
+    );
+    if (leave == true && mounted) {
+      _done = true;
+      Navigator.pop(context);
     }
   }
 
@@ -275,11 +313,11 @@ class _CameraScreenState extends State<CameraScreen>
     final controller = _controller;
     // Vert vif : bien visible sur l'aperçu caméra, quel que soit le fond.
     const color = Colors.greenAccent;
-    // Avec des pages prises, revenir en arrière ouvre leur revue plutôt que de les perdre.
+    // Avec des pages prises, revenir en arrière demande confirmation plutôt que de les perdre.
     return PopScope(
       canPop: _session.pages.isEmpty,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _openReview();
+        if (!didPop) _confirmLeave();
       },
       child: _scaffold(context, controller, color),
     );
@@ -616,22 +654,29 @@ class _ModeLabel extends StatelessWidget {
     selected: selected,
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.black : Colors.white70,
-            fontWeight: FontWeight.w700,
-            fontSize: 15,
+      borderRadius: BorderRadius.circular(24),
+      // Zone de toucher de 48 px de haut ; la pastille visible est plus fine.
+      child: SizedBox(
+        height: 48,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 36,
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? Colors.white : Colors.transparent,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected ? Colors.black : Colors.white70,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
           ),
         ),
       ),

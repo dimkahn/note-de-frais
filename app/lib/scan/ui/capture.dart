@@ -92,10 +92,10 @@ Future<ScanCompleted?> _scanFiles(BuildContext context, ScanMode mode) async {
     switch (outcome) {
       case ReviewSaved(:final pages):
         return ScanCompleted(mode, pages);
-      case ReviewContinue(session: final remaining) when remaining.canAdd:
+      case ReviewContinue(session: final remaining, addMore: true):
         session = remaining;
       case _:
-        return null; // retour sur un ticket déjà pris : abandon
+        return null; // retour arrière (ou dernière page supprimée) : abandon
     }
   }
   return null;

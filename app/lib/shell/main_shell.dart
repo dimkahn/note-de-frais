@@ -7,13 +7,13 @@ import '../account/ui/account_screen.dart';
 import '../scan/domain/scan_session.dart';
 import '../scan/ui/capture.dart';
 
-/// Navigation principale : un onglet par usage. L'état de chaque onglet est conservé.
 /// Lance un scan dans le mode donné et enregistre ce qui a été scanné.
 typedef ShellScanner = Future<SavedScan?> Function(
   BuildContext context,
   ScanMode mode,
 );
 
+/// Navigation principale : un onglet par usage (état conservé) et le bouton Scanner central.
 class MainShell extends StatefulWidget {
   const MainShell({super.key, this.scan = scanAndSave});
 
