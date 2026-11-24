@@ -203,10 +203,11 @@ class _CameraScreenState extends State<CameraScreen>
     if (controller == null || _capturing) return;
     setState(() => _capturing = true);
     HapticFeedback.mediumImpact();
+    final captured = _liveQuad;
     try {
       await controller.stopImageStream();
       final photo = await controller.takePicture();
-      await _add([CapturedPage(photoPath: photo.path, hint: _liveQuad)]);
+      await _add([CapturedPage(photoPath: photo.path, hint: captured)]);
     } on CameraException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context)
@@ -214,6 +215,8 @@ class _CameraScreenState extends State<CameraScreen>
       }
     } finally {
       await _resumeStream();
+      // Pas de seconde prise de la même page : attendre qu'elle soit retirée ou déplacée.
+      if (captured != null) _tracker.awaitNextPage(captured, DateTime.now());
       if (mounted) setState(() => _capturing = false);
     }
   }

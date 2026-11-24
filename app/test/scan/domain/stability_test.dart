@@ -152,4 +152,53 @@ void main() {
 
     expect(t.progress, closeTo(0.25, 1e-9));
   });
+
+  group('après une prise, attend la page suivante', () {
+    StabilityTracker afterCapture() {
+      final t = tracker();
+      t.update(doc, at(0));
+      t.update(doc, at(1000));
+      t.awaitNextPage(doc, at(1200));
+      return t;
+    }
+
+    test('la même page, restée en place, ne redéclenche pas', () {
+      final t = afterCapture();
+      t.update(doc, at(1300));
+
+      expect(t.update(doc, at(3000)), isFalse);
+    });
+
+    test('la page déjà prise n\'anime pas la progression', () {
+      final t = afterCapture();
+      t.update(doc, at(1300));
+      t.update(doc, at(1800));
+
+      expect(t.progress, 0);
+    });
+
+    test('une perte brève ne suffit pas à changer de page', () {
+      final t = afterCapture();
+      t.update(null, at(1300));
+      t.update(doc, at(1500));
+
+      expect(t.update(doc, at(3000)), isFalse);
+    });
+
+    test('une page retirée puis remise redéclenche', () {
+      final t = afterCapture();
+      t.update(null, at(1300));
+      t.update(null, at(1800));
+      t.update(doc, at(2000));
+
+      expect(t.update(doc, at(3000)), isTrue);
+    });
+
+    test('une page posée ailleurs redéclenche', () {
+      final t = afterCapture();
+      t.update(Quad.inset(0.3), at(1300));
+
+      expect(t.update(Quad.inset(0.3), at(2300)), isTrue);
+    });
+  });
 }

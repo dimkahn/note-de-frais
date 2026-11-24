@@ -21,6 +21,9 @@ final class StabilityTracker {
 
   /// Autre contour en lice pour remplacer le contour suivi : immobile depuis [_otherSince], vu
   /// sans trou de plus de [dropout] (dernière fois : [_otherSeen]).
+  /// Page déjà prise, tant qu'elle n'a pas quitté le cadre : ne déclenche pas une seconde fois.
+  Quad? _captured;
+
   Quad? _other;
   DateTime? _otherSince;
   DateTime? _otherSeen;
@@ -33,17 +36,28 @@ final class StabilityTracker {
 
   /// Avancement de 0 à 1 vers le déclenchement (pour l'animation du contour).
   double get progress {
-    if (_since == null || _last == null) return 0;
+    if (_since == null || _last == null || _isCaptured) return 0;
     final ratio =
         _last!.difference(_since!).inMicroseconds / holdFor.inMicroseconds;
     return ratio.clamp(0.0, 1.0);
+  }
+
+  /// Le contour suivi est la page déjà prise, restée en place.
+  bool get _isCaptured {
+    final captured = _captured, anchor = _anchor;
+    return captured != null &&
+        anchor != null &&
+        anchor.maxShift(captured) <= Quad.sameDocumentShift;
   }
 
   /// Retourne `true` au moment où la capture doit être déclenchée.
   bool update(Quad? quad, DateTime now) {
     if (quad == null) {
       final seen = _seen;
-      if (seen == null || now.difference(seen) > dropout) _forget();
+      if (seen == null || now.difference(seen) > dropout) {
+        _forget();
+        _captured = null;
+      }
       return false;
     }
     if (_anchor != null && quad.maxShift(_anchor!) > tolerance) {
@@ -60,6 +74,7 @@ final class StabilityTracker {
     _seen = now;
     _last = now;
     if (_fired || now.difference(_since!) < holdFor) return false;
+    if (_isCaptured) return false;
     _fired = true;
     return true;
   }
@@ -75,8 +90,18 @@ final class StabilityTracker {
     _otherSeen = now;
   }
 
+  /// Après la prise de [captured] : ne redéclenche pas avant que la page ait changé.
+  /// La page change quand plus aucun document n'est vu pendant [dropout], ou qu'un document
+  /// se stabilise ailleurs dans l'image.
+  void awaitNextPage(Quad captured, DateTime now) {
+    reset();
+    _captured = captured;
+    _seen = now;
+  }
+
   void reset() {
     _forget();
+    _captured = null;
     _seen = null;
     _fired = false;
   }
