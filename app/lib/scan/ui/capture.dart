@@ -10,29 +10,77 @@ import '../../expense/domain/expense.dart';
 
 import 'package:provider/provider.dart';
 
+import '../domain/page_scanner.dart';
 import '../domain/scan_session.dart';
 import 'adjust_screen.dart';
 import 'camera_screen.dart';
 import 'review_screen.dart';
 
-/// Scan jusqu'à la revue : caméra sur mobile (mode choisi dans la visée, sauf [modeLocked]),
-/// fichiers sur ordinateur. `null` si l'utilisateur abandonne.
+/// Scan jusqu'à la revue : scanner système ([pageScanner], ML Kit sur Android), sinon caméra
+/// maison sur mobile (mode choisi dans la visée, sauf [modeLocked]), fichiers sur ordinateur.
+/// `null` si l'utilisateur abandonne.
 Future<ScanCompleted?> scan(
   BuildContext context, {
   ScanMode mode = ScanMode.ticket,
   bool modeLocked = false,
+  PageScanner? pageScanner,
+  Compute compute = inIsolate,
 }) async {
-  if (Platform.isAndroid || Platform.isIOS) {
-    return Navigator.push<ScanCompleted>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CameraScreen(initialMode: mode, modeLocked: modeLocked),
-      ),
-    );
+  if (pageScanner == null && (Platform.isAndroid || Platform.isIOS)) {
+    return _camera(context, mode, modeLocked: modeLocked);
   }
   final chosen = modeLocked ? mode : await _chooseMode(context, mode);
   if (chosen == null || !context.mounted) return null;
-  return _scanFiles(context, chosen);
+  if (pageScanner == null) {
+    return _scanFrom(context, chosen, _pickFiles, compute);
+  }
+  try {
+    return await _scanFrom(
+      context,
+      chosen,
+      (mode) => _fromScanner(pageScanner, mode),
+      compute,
+    );
+  } on PageScannerUnavailable catch (e) {
+    debugPrint('$e : caméra de l\'application à la place');
+    if (!context.mounted) return null;
+    return _camera(context, chosen, modeLocked: true);
+  }
+}
+
+Future<ScanCompleted?> _camera(
+  BuildContext context,
+  ScanMode mode, {
+  required bool modeLocked,
+}) => Navigator.push<ScanCompleted>(
+  context,
+  MaterialPageRoute(
+    builder: (_) => CameraScreen(initialMode: mode, modeLocked: modeLocked),
+  ),
+);
+
+/// Pages à ajouter à une session dans [mode] ; liste vide si l'utilisateur abandonne.
+typedef PageSource = Future<List<CapturedPage>> Function(ScanMode mode);
+
+Future<List<CapturedPage>> _fromScanner(
+  PageScanner scanner,
+  ScanMode mode,
+) async => [
+  for (final path in await scanner.scan(pageLimit: mode.pageLimit) ?? [])
+    CapturedPage.scanned(path),
+];
+
+Future<List<CapturedPage>> _pickFiles(ScanMode mode) async {
+  final picker = ImagePicker();
+  final photos = mode == ScanMode.document
+      ? await picker.pickMultiImage(requestFullMetadata: false)
+      : [
+          ?await picker.pickImage(
+            source: ImageSource.gallery,
+            requestFullMetadata: false,
+          ),
+        ];
+  return [for (final photo in photos) CapturedPage(photoPath: photo.path)];
 }
 
 /// Sans caméra, le mode se choisit avant de prendre les fichiers.
@@ -64,30 +112,26 @@ Future<ScanMode?> _chooseMode(BuildContext context, ScanMode current) =>
       ),
     );
 
-/// Fichiers puis revue, autant de fois que l'utilisateur ajoute des pages.
-Future<ScanCompleted?> _scanFiles(BuildContext context, ScanMode mode) async {
+/// Pages de [source] puis revue, autant de fois que l'utilisateur ajoute des pages.
+Future<ScanCompleted?> _scanFrom(
+  BuildContext context,
+  ScanMode mode,
+  PageSource source,
+  Compute compute,
+) async {
   var session = ScanSession(mode);
-  final picker = ImagePicker();
   while (context.mounted) {
     if (session.canAdd) {
-      final photos = mode == ScanMode.document
-          ? await picker.pickMultiImage(requestFullMetadata: false)
-          : [
-              ?await picker.pickImage(
-                source: ImageSource.gallery,
-                requestFullMetadata: false,
-              ),
-            ];
-      for (final photo in photos) {
-        if (session.canAdd) {
-          session = session.withPage(CapturedPage(photoPath: photo.path));
-        }
+      for (final page in await source(mode)) {
+        if (session.canAdd) session = session.withPage(page);
       }
     }
     if (session.pages.isEmpty || !context.mounted) return null;
     final outcome = await Navigator.push<ReviewOutcome>(
       context,
-      MaterialPageRoute(builder: (_) => ReviewScreen(session: session)),
+      MaterialPageRoute(
+        builder: (_) => ReviewScreen(session: session, compute: compute),
+      ),
     );
     switch (outcome) {
       case ReviewSaved(:final pages):
