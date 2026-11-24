@@ -14,8 +14,9 @@ Produire, dans cet ordre, un document court (dans la conversation, ou `docs/desi
 3. **Modèle** : entités/records modifiés, migrations de schéma (serveur et SQLite app), compatibilité des données existantes.
 4. **API** : endpoints, verbes, codes HTTP, DTO JSON d'exemple ; rétrocompatibilité avec l'app déjà installée.
 5. **Hors-ligne / synchro** : que se passe-t-il sans réseau, conflits, rejouabilité (idempotence).
-6. **Couches** : quelles classes dans `expense` / `imaging` / `extraction` / `storage` / `web` et
-   `app/lib/{domain,data,ui}` ; nouvelles interfaces de frontière éventuelles.
+6. **Domaines et couches** : quel(s) domaine(s) (carte dans `CLAUDE.md`), quelles classes côté serveur
+   (`<domaine>/`, `<domaine>/web`) et app (`app/lib/<domaine>/{domain,data,ui}`) ; nouvelles interfaces
+   de frontière éventuelles ; `CLAUDE.md` du domaine à mettre à jour.
 7. **Plan de tests** : liste d'exemples ordonnés pour le skill `/tdd` (unitaires d'abord).
 8. **Alternatives écartées** : 1 à 2 lignes chacune, avec la raison.
 

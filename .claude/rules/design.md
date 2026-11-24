@@ -1,7 +1,11 @@
 # Conception
 
-- **Responsabilité unique** : un paquet par capacité métier (`expense`, `imaging`, `extraction`,
-  `storage`, `web`) ; pas de paquets « utils » fourre-tout.
+- **Découpage par domaine fonctionnel** (carte dans `CLAUDE.md`) : `account`, `expense`, `document`,
+  `receipt` (serveur) / `scan` (app), `export` (app) ; le transverse va dans `storage`, `web`, `config`
+  (serveur) ou `shared`, `shell` (app). Pas de paquets « utils » fourre-tout. Chaque domaine a son
+  `CLAUDE.md` (responsabilité, invariants, frontières, tests) : le tenir à jour quand le domaine change.
+- Dépendances entre domaines à sens unique quand c'est possible ; un nouveau domaine = un dossier côté
+  serveur et/ou app + son `CLAUDE.md`.
 - **Dépendances vers le métier** : le domaine ne connaît ni HTTP, ni OpenCV, ni le SDK Anthropic.
   Les intégrations externes sont derrière une interface définie côté métier
   (`ReceiptExtractor`, `ImageProcessor`, `FileStorage`).

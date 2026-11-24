@@ -91,7 +91,7 @@ l'app garde les valeurs lues sur l'appareil.
 - Restent ouverts : rattachement des dépenses d'avant les comptes (sans propriétaire, invisibles).
 - Adresse du serveur par type de build (résolu après la phase 1b) : debug/profile →
   `http://localhost:8080` (téléphone relié au PC par `adb reverse tcp:8080 tcp:8080`), release →
-  `https://api.notedefrais.fr` (provisoire). Constantes dans `app/lib/data/server_config.dart`,
+  `https://api.notedefrais.fr` (provisoire). Constantes dans `app/lib/shared/data/server_config.dart`,
   surchargeables au build par `--dart-define=API_URL=...` ; le champ de « Avancé » reste une
   surcharge facultative (vide = adresse du build, l'adresse effective est affichée). Android : http
   en clair autorisé seulement en debug et seulement vers localhost (`src/debug`, network security config).
@@ -177,7 +177,7 @@ l'app garde les valeurs lues sur l'appareil.
   Google refusée, réessayez. », 403 → motif du serveur, 503 → « indisponible sur ce serveur ».
   Ensuite tout se passe comme après une connexion par mot de passe (synchro, empreinte proposée,
   clé d'un autre compte effacée). `serverClientId` : `buildGoogleServerClientId` dans
-  `app/lib/data/server_config.dart`, surchargeable par `--dart-define=GOOGLE_SERVER_CLIENT_ID=...` ;
+  `app/lib/shared/data/server_config.dart`, surchargeable par `--dart-define=GOOGLE_SERVER_CLIENT_ID=...` ;
   vide → bouton masqué.
 - Restent ouverts : iOS non configuré (identifiant client iOS + schéma d'URL dans `Info.plist`) ;
   deux premières connexions Google simultanées pour le même compte peuvent se heurter à l'unicité
@@ -258,7 +258,7 @@ Rien n'est à inventer : chaque identifiant vient de la console Google Cloud.
 5. **Où mettre les valeurs** — la même valeur partout, l'ID client **Web** :
    - serveur : variable d'environnement `NDF_GOOGLE_CLIENT_ID=<ID client Web>` (lu par
      `app.google.client-id` dans `application.yml`) ;
-   - app : `buildGoogleServerClientId` dans `app/lib/data/server_config.dart`, ou au lancement
+   - app : `buildGoogleServerClientId` dans `app/lib/shared/data/server_config.dart`, ou au lancement
      `flutter run --dart-define=GOOGLE_SERVER_CLIENT_ID=<ID client Web>`.
 6. **Vérifier** : relancer le serveur et l'app ; la page Compte affiche « Continuer avec Google ».
    Erreurs fréquentes : 503 → `NDF_GOOGLE_CLIENT_ID` absent ; « Connexion Google impossible sur

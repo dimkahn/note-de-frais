@@ -37,12 +37,12 @@ immédiatement. La synchro envoie original + coins + filtre ; l'image traitée s
 définition, même algorithme) remplace ensuite la copie locale.
 
 ## Couches
-- `app/lib/domain/quad.dart` : géométrie pure (ordre, convexité, aire, rotation selon l'orientation
+- `app/lib/scan/domain/quad.dart` : géométrie pure (ordre, convexité, aire, rotation selon l'orientation
   du capteur, (dé)sérialisation, contrainte de déplacement d'un coin).
-- `app/lib/domain/stability.dart` : détecteur de stabilité pour le déclenchement automatique.
-- `app/lib/scan/document_scanner.dart` : OpenCV sur l'appareil (`opencv_dart`) — détection, découpe, filtres.
+- `app/lib/scan/domain/stability.dart` : détecteur de stabilité pour le déclenchement automatique.
+- `app/lib/scan/data/document_scanner.dart` : OpenCV sur l'appareil (`opencv_dart`) — détection, découpe, filtres.
   Mêmes paramètres que `server/.../OpenCvImageProcessor` (duplication assumée Java/Dart, documentée des deux côtés).
-- `app/lib/scan/` : écrans caméra et ajustement ; `CornerEditor` widget.
+- `app/lib/scan/ui/` : écrans caméra et ajustement ; `CornerEditor` widget.
 - Serveur : `ImageProcessor.process(original, filter, corners)` ; `Quad` record + validation.
 
 ## Plan de tests (ordre TDD)

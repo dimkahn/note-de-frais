@@ -41,15 +41,15 @@ Aucune modification.
 - La lecture est relue depuis la base juste avant d'appliquer le résultat (une synchro a pu passer entre-temps).
 
 ## Couches
-- `app/lib/domain/receipt_parser.dart` : `ReceiptParser.parse(String texte) → ReceiptGuess`, pur Dart, règles
+- `app/lib/scan/domain/receipt_parser.dart` : `ReceiptParser.parse(String texte) → ReceiptGuess`, pur Dart, règles
   pour tickets/factures français (montants `12,50` / `1 234,56`, mots-clés TOTAL/TTC/NET À PAYER, TVA,
   dates `jj/mm/aaaa`, `jj.mm.aa`, `12 mars 2026`, devise €/EUR/CHF/$/£, commerçant = première ligne significative).
-- `app/lib/domain/expense.dart` : `prefilled`, `withDeviceGuess`.
-- `app/lib/scan/receipt_text_reader.dart` : interface `ReceiptTextReader { Future<String?> read(String imagePath) }`
+- `app/lib/expense/domain/expense.dart` : `prefilled`, `withDeviceGuess`.
+- `app/lib/scan/domain/receipt_text_reader.dart` : interface `ReceiptTextReader { Future<String?> read(String imagePath) }`
   (frontière), implémentation `MlKitReceiptTextReader` (`google_mlkit_text_recognition`, script latin).
-- `app/lib/data/expense_repository.dart` : après `captureScan`, lecture en arrière-plan → `withDeviceGuess` → enregistrement local.
-- `app/lib/data/sync_service.dart` : règle de fusion ci-dessus.
-- `app/lib/ui` : badge « À vérifier » et carte d'explication sur la fiche.
+- `app/lib/expense/data/expense_repository.dart` : après `captureScan`, lecture en arrière-plan → `withDeviceGuess` → enregistrement local.
+- `app/lib/expense/data/sync_service.dart` : règle de fusion ci-dessus.
+- `app/lib/expense/ui` : badge « À vérifier » et carte d'explication sur la fiche.
 - `main.dart` : lecteur ML Kit sur Android/iOS, aucun lecteur sur desktop.
 
 ## Plan de tests (ordre TDD)
