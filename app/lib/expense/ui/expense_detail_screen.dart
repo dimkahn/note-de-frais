@@ -36,7 +36,12 @@ class ExpenseDetailScreen extends StatelessWidget {
           IconButton(
             tooltip: 'Ajuster le cadrage et le filtre',
             icon: const Icon(Icons.crop_rotate),
-            onPressed: () => readjustReceipt(context, repo, expense),
+            onPressed: () => readjustReceipt(
+              context,
+              repo,
+              expense,
+              onDelete: () => _confirmDelete(context, repo, expense),
+            ),
           ),
           IconButton(
             tooltip: 'Supprimer',

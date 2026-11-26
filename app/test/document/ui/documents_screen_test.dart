@@ -9,7 +9,7 @@ import 'package:note_de_frais/shared/data/file_store.dart';
 import 'package:note_de_frais/shared/data/local_store.dart';
 import 'package:note_de_frais/expense/domain/expense.dart';
 import 'package:note_de_frais/scan/domain/quad.dart';
-import 'package:note_de_frais/scan/ui/adjust_screen.dart';
+import 'package:note_de_frais/scan/ui/review_screen.dart';
 import 'package:note_de_frais/document/ui/documents_screen.dart';
 import 'package:opencv_dart/opencv_dart.dart' as cv;
 import 'package:provider/provider.dart';
@@ -303,26 +303,36 @@ void main() {
     );
   });
 
-  testWidgets(
-    'ajuste la page lue à partir de son original, cadrage et filtre repris',
-    (tester) async {
-      await pump(tester, documents: 1, pages: 2);
-      await openDocument(tester);
-      await tester.tap(find.text('2'));
-      await tester.pumpAndSettle();
+  /// La revue ouverte : ses pages, à partir des originaux, cadrage, filtre et rotation repris.
+  ReviewScreen review(WidgetTester tester) =>
+      tester.widget<ReviewScreen>(find.byType(ReviewScreen));
 
-      await tester.tap(find.byTooltip('Ajuster la page'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
+  void expectReviewOfDocument(WidgetTester tester, {required int at}) {
+    final pages = repo.documents.single.pages;
+    final screen = review(tester);
+    expect(screen.editing, isTrue);
+    expect(screen.initialPage, at);
+    expect(screen.session.pages.map((p) => p.photoPath), [
+      for (final p in pages) p.originalPath,
+    ]);
+    expect(screen.session.pages[at].corners, pages[at].corners);
+    expect(screen.session.pages[at].filter, pages[at].filter);
+  }
 
-      final page = repo.documents.single.pages[1];
-      final screen = tester.widget<AdjustScreen>(find.byType(AdjustScreen));
-      expect(screen.photoPath, page.originalPath);
-      expect(screen.initialQuad, page.corners);
-      expect(screen.initialFilter, page.filter);
-      expect(screen.onSkip, isNull);
-    },
-  );
+  testWidgets('ajuste la page lue dans la revue du document, sur cette page', (
+    tester,
+  ) async {
+    await pump(tester, documents: 1, pages: 2);
+    await openDocument(tester);
+    await tester.tap(find.text('2'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Ajuster la page'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expectReviewOfDocument(tester, at: 1);
+  });
 
   testWidgets('ajuste une page depuis l\'appui long sur sa vignette', (
     tester,
@@ -336,36 +346,22 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    final screen = tester.widget<AdjustScreen>(find.byType(AdjustScreen));
-    expect(screen.photoPath, repo.documents.single.pages[1].originalPath);
+    expectReviewOfDocument(tester, at: 1);
   });
 
-  /// Laisse passer le vrai temps (ouverture d'écran, lecture et décodage de l'original) jusqu'à ce
-  /// que [text] soit affiché.
-  Future<void> waitFor(WidgetTester tester, String text) async {
-    for (var i = 0; i < 100 && find.text(text).evaluate().isEmpty; i++) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 50)),
-      );
+  testWidgets(
+    'modifie toutes les pages depuis le menu, à partir de la première',
+    (tester) async {
+      await pump(tester, documents: 1, pages: 2);
+      await openDocument(tester);
+
+      await tester.tap(find.byTooltip('Plus d\'options'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Modifier les pages'));
       await tester.pump();
-    }
-  }
+      await tester.pump(const Duration(milliseconds: 400));
 
-  testWidgets('reprend toutes les pages une à une depuis le menu', (
-    tester,
-  ) async {
-    await pump(tester, documents: 1, pages: 2);
-    await openDocument(tester);
-
-    await tester.tap(find.byTooltip('Plus d\'options'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Ajuster toutes les pages'));
-    await waitFor(tester, 'Passer');
-    expect(find.text('Page 1 sur 2'), findsOneWidget);
-
-    await tester.tap(find.text('Passer'));
-    await waitFor(tester, 'Page 2 sur 2');
-
-    expect(find.text('Page 2 sur 2'), findsOneWidget);
-  });
+      expectReviewOfDocument(tester, at: 0);
+    },
+  );
 }

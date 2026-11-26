@@ -6,10 +6,11 @@ Contrepartie serveur : `server/…/document/`. Conception : `docs/design/documen
 - `data/` : `DocumentRepository`, `DocumentApi` (`/api/documents`), `DocumentSyncService` (même modèle que
   la synchro des dépenses ; envoie original **et** rendu calculé sur l'appareil).
 - `ui/` : onglet Documents (`documents_screen`) et fiche (`document_screen` : pages, ajout, retrait, renommage, export).
+  Modifier les pages (cadrage, rotation, filtre, retrait, ajout) ouvre la revue de `scan/` (`editDocument`).
 
 Invariants propres
 - Pas d'analyse : le rendu est calculé par `scan/` sur l'appareil.
 - Page retirée = retirée de la liste, ses fichiers restent ; document supprimé = `deleted` logique.
 - UUID client pour document et pages.
 
-Tests : `test/document/**`, `test/scan/ui/adjust_pages_test.dart` (ajout de pages).
+Tests : `test/document/**`, `test/scan/ui/edit_pages_test.dart` (modification des pages).

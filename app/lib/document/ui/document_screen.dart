@@ -36,20 +36,15 @@ class DocumentScreen extends StatelessWidget {
           PopupMenuButton<String>(
             tooltip: 'Plus d\'options',
             onSelected: (action) => switch (action) {
-              'adjust' => adjustDocumentPages(
-                repo,
-                doc.id,
-                (page, title) =>
-                    adjustPageOnScreen(context, page, title, skippable: true),
-              ),
+              'edit' => editDocument(context, repo, doc.id),
               'rename' => _rename(context, repo, doc),
               _ => _delete(context, repo, doc),
             },
             itemBuilder: (_) => [
               if (doc.pages.isNotEmpty)
                 const PopupMenuItem(
-                  value: 'adjust',
-                  child: Text('Ajuster toutes les pages'),
+                  value: 'edit',
+                  child: Text('Modifier les pages'),
                 ),
               const PopupMenuItem(value: 'rename', child: Text('Renommer')),
               const PopupMenuItem(
@@ -80,8 +75,7 @@ class DocumentScreen extends StatelessWidget {
                 number: i + 1,
                 page: doc.pages[i],
                 onTap: () => _view(context, doc, i),
-                onLongPress: () =>
-                    _pageActions(context, repo, doc, doc.pages[i]),
+                onLongPress: () => _pageActions(context, repo, doc, i),
               ),
             ),
     );
@@ -108,7 +102,7 @@ class DocumentScreen extends StatelessWidget {
     BuildContext context,
     DocumentRepository repo,
     ScannedDocument doc,
-    ScannedPage page,
+    int index,
   ) async {
     final action = await showModalBottomSheet<_PageAction>(
       context: context,
@@ -140,9 +134,9 @@ class DocumentScreen extends StatelessWidget {
     if (!context.mounted) return;
     switch (action) {
       case _PageAction.adjust:
-        await adjustDocumentPage(context, repo, doc.id, page);
+        await editDocument(context, repo, doc.id, initialPage: index);
       case _PageAction.remove:
-        await repo.removePage(doc.id, page.id);
+        await repo.removePage(doc.id, doc.pages[index].id);
       case null:
         break;
     }
@@ -324,11 +318,11 @@ class _PageViewerState extends State<_PageViewer> {
           IconButton(
             tooltip: 'Ajuster la page',
             icon: const Icon(Icons.crop_rotate),
-            onPressed: () => adjustDocumentPage(
+            onPressed: () => editDocument(
               context,
               repo,
               widget.documentId,
-              pages[page],
+              initialPage: page,
             ),
           ),
           IconButton(

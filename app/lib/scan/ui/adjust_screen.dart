@@ -47,7 +47,6 @@ class AdjustScreen extends StatefulWidget {
     this.initialFilter = ImageFilter.enhance,
     this.initialRotation = Rotation.none,
     this.title = 'Ajuster le cadrage',
-    this.onSkip,
     this.compute = inIsolate,
   });
 
@@ -62,9 +61,6 @@ class AdjustScreen extends StatefulWidget {
   final Rotation initialRotation;
   final String title;
 
-  /// Reprise de plusieurs pages : « Passer » remplace « Reprendre », appelle ce rappel puis ferme
-  /// l'écran sans résultat.
-  final VoidCallback? onSkip;
   final Compute compute;
 
   @override
@@ -237,14 +233,8 @@ class _AdjustScreenState extends State<AdjustScreen> {
                               foregroundColor: Colors.white,
                             ),
                             onPressed: _busy ? null : _leave,
-                            icon: Icon(
-                              widget.onSkip == null
-                                  ? Icons.replay
-                                  : Icons.skip_next,
-                            ),
-                            label: Text(
-                              widget.onSkip == null ? 'Reprendre' : 'Passer',
-                            ),
+                            icon: const Icon(Icons.replay),
+                            label: const Text('Reprendre'),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -280,10 +270,7 @@ class _AdjustScreenState extends State<AdjustScreen> {
     _refreshPreview();
   }
 
-  void _leave() {
-    widget.onSkip?.call();
-    Navigator.pop(context);
-  }
+  void _leave() => Navigator.pop(context);
 
   Widget _editor() => CornerEditor(
     imageAspectRatio: _aspectRatio,

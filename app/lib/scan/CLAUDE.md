@@ -17,8 +17,12 @@ Contrepartie serveur : `server/…/receipt/`. Conception : `docs/design/scanner.
   `ReviewScreen` (pages en grand, Recadrer / Pivoter / Filtres en vignettes / Supprimer / Ajouter) →
   `ScanCompleted`. `capture.dart` : `scan()` (Android : choix du mode, scanner ML Kit puis revue, repli
   sur `CameraScreen` s'il est indisponible ; iOS : caméra ; ordinateur : fichiers + revue),
-  `scanAndSave()` (bouton central), `scanPages()` (ajout de pages, mode imposé), réajustements.
-  `AdjustScreen` (+ `CornerEditor`) sert à Recadrer et à réajuster une dépense ou une page existante.
+  `scanAndSave()` (bouton central), `scanPages()` (ajout de pages, mode imposé).
+  Modification de l'existant dans la même revue (`ReviewScreen.edit` : retour = abandon) :
+  `readjustReceipt()` (dépense, sans Ajouter ; supprimer la page = supprimer la dépense) et
+  `editDocument()` (pages du document ; `saveDocumentEdit()` reconnaît une page à sa photo d'origine :
+  réajustée si changée, retirée si absente, ajoutée en fin si nouvelle).
+  `AdjustScreen` (+ `CornerEditor`) ne sert plus qu'à Recadrer.
 
 Invariants propres
 - L'original n'est jamais modifié : recadrage, filtre et rotation produisent une copie. L'original est la

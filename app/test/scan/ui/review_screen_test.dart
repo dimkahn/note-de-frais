@@ -44,6 +44,7 @@ void main() {
     WidgetTester tester,
     ScanSession session, {
     Compute compute = _inline,
+    int? editingFrom,
   }) async {
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.6;
@@ -56,8 +57,13 @@ void main() {
             onPressed: () => outcome = Navigator.push<ReviewOutcome>(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                    ReviewScreen(session: session, compute: compute),
+                builder: (_) => editingFrom == null
+                    ? ReviewScreen(session: session, compute: compute)
+                    : ReviewScreen.edit(
+                        session: session,
+                        initialPage: editingFrom,
+                        compute: compute,
+                      ),
               ),
             ),
             child: const Text('ouvrir'),
@@ -259,4 +265,26 @@ void main() {
       expect(await outcome, isA<ReviewSaved>());
     },
   );
+
+  testWidgets('en modification, s\'ouvre sur la page demandée', (tester) async {
+    await open(tester, session(ScanMode.document, 3), editingFrom: 1);
+
+    expect(find.text('Page 2 / 3'), findsOneWidget);
+  });
+
+  testWidgets('en modification, revenir en arrière abandonne les changements', (
+    tester,
+  ) async {
+    final outcome = await open(
+      tester,
+      session(ScanMode.document, 2),
+      editingFrom: 0,
+    );
+    await tapTool(tester, 'Pivoter');
+
+    await tester.pageBack();
+    await settleRealAsync(tester);
+
+    expect(await outcome, isNull);
+  });
 }

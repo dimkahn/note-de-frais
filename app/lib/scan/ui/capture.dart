@@ -226,12 +226,15 @@ Future<Expense> _saveReceipt(
   return expense;
 }
 
-/// Réajuste le cadrage et/ou le filtre d'une dépense existante, à partir de son original.
+/// Modifie le justificatif d'une dépense dans la revue, à partir de son original. Supprimer sa
+/// page revient à supprimer la dépense : [onDelete] (qui demande confirmation).
 Future<void> readjustReceipt(
   BuildContext context,
   ExpenseRepository repo,
-  Expense e,
-) async {
+  Expense e, {
+  required Future<void> Function() onDelete,
+  Compute compute = inIsolate,
+}) async {
   final original = e.originalPath;
   if (original == null || !File(original).existsSync()) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -241,25 +244,41 @@ Future<void> readjustReceipt(
     );
     return;
   }
-  final scan = await Navigator.push<ScanResult>(
+  final outcome = await Navigator.push<ReviewOutcome>(
     context,
     MaterialPageRoute(
-      builder: (_) => AdjustScreen(
-        photoPath: original,
-        initialQuad: e.corners,
-        initialFilter: e.filter,
-        initialRotation: e.rotation,
+      builder: (_) => ReviewScreen.edit(
+        session: const ScanSession(ScanMode.ticket).withPage(
+          CapturedPage(
+            photoPath: original,
+            corners: e.corners,
+            filter: e.filter,
+            rotation: e.rotation,
+          ),
+        ),
+        compute: compute,
       ),
     ),
   );
-  if (scan == null) return;
-  await repo.reprocess(
-    e.id,
-    scan.filter,
-    corners: scan.quad,
-    rotation: scan.rotation,
-    processedJpeg: scan.processedJpeg,
-  );
+  switch (outcome) {
+    case ReviewSaved(pages: [final scan]):
+      if (scan.quad == e.corners &&
+          scan.filter == e.filter &&
+          scan.rotation == e.rotation) {
+        return;
+      }
+      await repo.reprocess(
+        e.id,
+        scan.filter,
+        corners: scan.quad,
+        rotation: scan.rotation,
+        processedJpeg: scan.processedJpeg,
+      );
+    case ReviewContinue():
+      await onDelete();
+    case _:
+      return;
+  }
 }
 
 /// Pages ajoutées à un document existant : scan en mode Document imposé.
@@ -280,95 +299,6 @@ List<PageCapture> _captures(List<ScanResult> scans) => [
     ),
 ];
 
-/// Choix fait sur l'écran d'ajustement d'une page de document.
-sealed class PageAdjustment {
-  const PageAdjustment();
-}
-
-/// Nouveau cadrage/filtre validé pour la page.
-final class AdjustedPage extends PageAdjustment {
-  const AdjustedPage(this.scan);
-
-  final ScanResult scan;
-}
-
-/// Page laissée telle quelle ; on passe à la suivante.
-final class SkippedPage extends PageAdjustment {
-  const SkippedPage();
-}
-
-/// Fin de la reprise : les pages suivantes ne sont pas proposées.
-final class StopAdjusting extends PageAdjustment {
-  const StopAdjusting();
-}
-
-/// Présente une page (à partir de son original) et rend le choix de l'utilisateur.
-typedef PageAdjuster = Future<PageAdjustment> Function(
-  ScannedPage page,
-  String title,
-);
-
-/// Reprend les pages d'un document une à une ; chaque page validée est enregistrée aussitôt, donc
-/// conservée si l'utilisateur s'arrête en cours de route.
-Future<void> adjustDocumentPages(
-  DocumentRepository repo,
-  String documentId,
-  PageAdjuster adjust,
-) async {
-  final pages = repo.byId(documentId)?.pages ?? const <ScannedPage>[];
-  for (final (i, page) in pages.indexed) {
-    switch (await adjust(page, 'Page ${i + 1} sur ${pages.length}')) {
-      case AdjustedPage(:final scan):
-        await _savePage(repo, documentId, page, scan);
-      case SkippedPage():
-        continue;
-      case StopAdjusting():
-        return;
-    }
-  }
-}
-
-/// Ajuste une seule page d'un document, à partir de son original.
-Future<void> adjustDocumentPage(
-  BuildContext context,
-  DocumentRepository repo,
-  String documentId,
-  ScannedPage page,
-) async {
-  final result = await adjustPageOnScreen(context, page, 'Ajuster la page');
-  if (result case AdjustedPage(:final scan)) {
-    await _savePage(repo, documentId, page, scan);
-  }
-}
-
-/// Écran d'ajustement ouvert sur l'original de la page, cadrage et filtre précédents repris.
-/// Avec [skippable], l'utilisateur peut passer la page ; revenir en arrière arrête la reprise.
-Future<PageAdjustment> adjustPageOnScreen(
-  BuildContext context,
-  ScannedPage page,
-  String title, {
-  bool skippable = false,
-}) async {
-  // L'écran appelant a pu disparaître pendant la page précédente (document supprimé…).
-  if (!context.mounted) return const StopAdjusting();
-  var skipped = false;
-  final scan = await Navigator.push<ScanResult>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => AdjustScreen(
-        photoPath: page.originalPath,
-        initialQuad: page.corners,
-        initialFilter: page.filter,
-        initialRotation: page.rotation,
-        title: title,
-        onSkip: skippable ? () => skipped = true : null,
-      ),
-    ),
-  );
-  if (scan != null) return AdjustedPage(scan);
-  return skipped ? const SkippedPage() : const StopAdjusting();
-}
-
 Future<void> _savePage(
   DocumentRepository repo,
   String documentId,
@@ -382,3 +312,146 @@ Future<void> _savePage(
   rotation: scan.rotation,
   processedJpeg: scan.processedJpeg,
 );
+
+/// Applique au document l'issue de sa revue. Une page est reconnue à sa photo d'origine : celles
+/// modifiées sont réajustées, celles absentes retirées, les photos inconnues ajoutées à la fin.
+Future<void> saveDocumentEdit(
+  DocumentRepository repo,
+  String documentId,
+  List<ScanResult> pages,
+) async {
+  final before = repo.byId(documentId)?.pages ?? const <ScannedPage>[];
+  final reviewed = {for (final p in pages) p.photoPath: p};
+  for (final page in before) {
+    final scan = reviewed[page.originalPath];
+    if (scan == null) {
+      await repo.removePage(documentId, page.id);
+    } else if (_changed(page, scan)) {
+      await _savePage(repo, documentId, page, scan);
+    }
+  }
+  final known = {for (final p in before) p.originalPath};
+  final added = [
+    for (final p in pages)
+      if (!known.contains(p.photoPath)) p,
+  ];
+  if (added.isNotEmpty) await repo.addPages(documentId, _captures(added));
+}
+
+bool _changed(ScannedPage page, ScanResult scan) =>
+    scan.quad != page.corners ||
+    scan.filter != page.filter ||
+    scan.rotation != page.rotation;
+
+/// Modifie les pages d'un document dans la revue, ouverte sur [initialPage].
+Future<void> editDocument(
+  BuildContext context,
+  DocumentRepository repo,
+  String documentId, {
+  int initialPage = 0,
+  PageScanner? pageScanner,
+  Compute compute = inIsolate,
+}) async {
+  final doc = repo.byId(documentId);
+  if (doc == null) return;
+  var session = ScanSession(
+    ScanMode.document,
+    pages: [
+      for (final p in doc.pages)
+        CapturedPage(
+          photoPath: p.originalPath,
+          corners: p.corners,
+          filter: p.filter,
+          rotation: p.rotation,
+        ),
+    ],
+  );
+  final source = _pageSource(context, pageScanner);
+  var page = initialPage;
+  while (true) {
+    if (!context.mounted) return;
+    final outcome = await Navigator.push<ReviewOutcome>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReviewScreen.edit(
+          session: session,
+          initialPage: page,
+          compute: compute,
+        ),
+      ),
+    );
+    switch (outcome) {
+      case ReviewSaved(:final pages):
+        return saveDocumentEdit(repo, documentId, pages);
+      case ReviewContinue(session: final kept, addMore: true):
+        final added = await source(ScanMode.document);
+        session = added.fold(kept, (s, p) => s.withPage(p));
+        page = added.isEmpty ? 0 : kept.pages.length;
+      case ReviewContinue():
+        if (context.mounted &&
+            await _confirmRemoveAll(context, doc.pages.length)) {
+          await saveDocumentEdit(repo, documentId, const []);
+        }
+        return;
+      case null:
+        return;
+    }
+  }
+}
+
+Future<bool> _confirmRemoveAll(BuildContext context, int count) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          count > 1 ? 'Retirer les $count pages ?' : 'Retirer la page ?',
+        ),
+        content: const Text('Les photos d\'origine restent sur l\'appareil.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Retirer'),
+          ),
+        ],
+      ),
+    ) ??
+    false;
+
+/// D'où viennent les pages ajoutées pendant une modification : scanner système, sinon caméra de
+/// l'application sur mobile, fichiers sur ordinateur. Liste vide si rien n'est pris.
+PageSource _pageSource(BuildContext context, PageScanner? pageScanner) {
+  final scanner =
+      pageScanner ?? (Platform.isAndroid ? const MlKitPageScanner() : null);
+  if (scanner != null) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    return (mode) async {
+      try {
+        return await _fromScanner(scanner, mode);
+      } on PageScannerUnavailable catch (e) {
+        debugPrint('$e');
+        messenger?.showSnackBar(
+          const SnackBar(content: Text('Scanner indisponible, réessayez')),
+        );
+        return const [];
+      }
+    };
+  }
+  if (Platform.isAndroid || Platform.isIOS) {
+    return (mode) async => [
+      for (final s
+          in (await _camera(context, mode, modeLocked: true))?.pages ??
+              const <ScanResult>[])
+        CapturedPage(
+          photoPath: s.photoPath,
+          corners: s.quad,
+          filter: s.filter,
+          rotation: s.rotation,
+        ),
+    ];
+  }
+  return _pickFiles;
+}

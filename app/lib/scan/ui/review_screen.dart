@@ -39,9 +39,21 @@ class ReviewScreen extends StatefulWidget {
     super.key,
     required this.session,
     this.compute = inIsolate,
-  });
+  }) : initialPage = 0,
+       editing = false;
+
+  /// Modification de pages déjà enregistrées, ouverte sur [initialPage] : revenir en arrière
+  /// abandonne les changements (issue `null`).
+  const ReviewScreen.edit({
+    super.key,
+    required this.session,
+    this.initialPage = 0,
+    this.compute = inIsolate,
+  }) : editing = true;
 
   final ScanSession session;
+  final int initialPage;
+  final bool editing;
   final Compute compute;
 
   @override
@@ -77,8 +89,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
   static const _fullSide = 2400;
 
   late ScanSession _session = widget.session;
-  final _pager = PageController();
-  int _index = 0;
+  late final _pager = PageController(initialPage: widget.initialPage);
+  late int _index = widget.initialPage;
   bool _showFilters = false;
   bool _saving = false;
 
@@ -95,7 +107,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
   @override
   void initState() {
     super.initState();
-    _ensurePreview(0);
+    _ensurePreview(_index);
   }
 
   @override
@@ -248,12 +260,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
   void _addMore() =>
       Navigator.pop(context, ReviewContinue(_session, addMore: true));
 
-  /// Retour arrière : un ticket est repris (sa page abandonnée), un document garde ses pages.
+  /// Retour arrière : une modification est abandonnée ; un ticket est repris (sa page
+  /// abandonnée), un document garde ses pages.
   void _back() => Navigator.pop(
     context,
-    ReviewContinue(
-      _session.mode == ScanMode.ticket ? ScanSession(_session.mode) : _session,
-    ),
+    widget.editing
+        ? null
+        : ReviewContinue(
+            _session.mode == ScanMode.ticket
+                ? ScanSession(_session.mode)
+                : _session,
+          ),
   );
 
   Future<void> _save() async {
