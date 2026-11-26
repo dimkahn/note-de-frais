@@ -91,7 +91,7 @@ void main() {
   test('une page modifiée dans la revue est réajustée', () async {
     final [p0, p1, p2] = doc.pages;
 
-    await saveDocumentEdit(repo, doc.id, [
+    await saveDocumentEdit(repo, doc.id, doc.pages, [
       reviewed(p0),
       reviewed(p1, filter: ImageFilter.scanBw, rotation: Rotation.clockwise90),
       reviewed(p2),
@@ -106,7 +106,7 @@ void main() {
   test('une page inchangée garde son rendu', () async {
     final [p0, p1, p2] = doc.pages;
 
-    await saveDocumentEdit(repo, doc.id, [
+    await saveDocumentEdit(repo, doc.id, doc.pages, [
       reviewed(p0),
       reviewed(p1, filter: ImageFilter.scanBw),
       reviewed(p2),
@@ -119,7 +119,10 @@ void main() {
   test('une page supprimée dans la revue est retirée du document', () async {
     final [p0, p1, p2] = doc.pages;
 
-    await saveDocumentEdit(repo, doc.id, [reviewed(p0), reviewed(p2)]);
+    await saveDocumentEdit(repo, doc.id, doc.pages, [
+      reviewed(p0),
+      reviewed(p2),
+    ]);
 
     expect(repo.byId(doc.id)!.pages.map((p) => p.id), [p0.id, p2.id]);
     expect(p1.originalPath, isNot(isEmpty));
@@ -130,7 +133,7 @@ void main() {
     final [p0, p1, p2] = doc.pages;
     final photo = (File('${dir.path}/new.jpg')..writeAsBytesSync([7])).path;
 
-    await saveDocumentEdit(repo, doc.id, [
+    await saveDocumentEdit(repo, doc.id, doc.pages, [
       reviewed(p0),
       reviewed(p1),
       reviewed(p2),
@@ -146,6 +149,27 @@ void main() {
     expect(pages, hasLength(4));
     expect(pages.last.filter, ImageFilter.none);
     expect(rendered(3), [8]);
+  });
+
+  test('une page arrivée pendant la revue (synchro) est conservée', () async {
+    final [p0, p1, p2] = doc.pages;
+    final edited = doc.pages;
+    await repo.addPages(doc.id, [
+      PageCapture(
+        photoPath: (File('${dir.path}/sync.jpg')..writeAsBytesSync([5])).path,
+        corners: Quad.inset(0.1),
+        filter: ImageFilter.enhance,
+        processedJpeg: [5],
+      ),
+    ]);
+
+    await saveDocumentEdit(repo, doc.id, edited, [
+      reviewed(p0),
+      reviewed(p1),
+      reviewed(p2),
+    ]);
+
+    expect(repo.byId(doc.id)!.pages, hasLength(4));
   });
 
   /// Lance la modification du document depuis une page d'accueil.
@@ -218,6 +242,40 @@ void main() {
       await until(tester, () => repo.byId(doc.id)!.pages.isEmpty);
 
       expect(repo.byId(doc.id)!.pages, isEmpty);
+    },
+  );
+
+  testWidgets('revenir en arrière ne modifie pas le document', (tester) async {
+    final before = repo.byId(doc.id)!.pages;
+    await edit(tester);
+
+    await tester.tap(find.text('Pivoter'));
+    await settleRealAsync(tester);
+    await tester.pageBack();
+    await settleRealAsync(tester);
+    await until(tester, () => false);
+
+    final after = repo.byId(doc.id)!.pages;
+    expect(after.map((p) => (p.id, p.rotation, p.processedPath)), [
+      for (final p in before) (p.id, p.rotation, p.processedPath),
+    ]);
+  });
+
+  testWidgets(
+    'annuler le retrait de toutes les pages rouvre la revue, sans rien retirer',
+    (tester) async {
+      await edit(tester);
+
+      for (var i = 0; i < 3; i++) {
+        await tester.tap(find.text('Supprimer'));
+        await settleRealAsync(tester);
+      }
+      await tester.tap(find.text('Annuler'));
+      await settleRealAsync(tester);
+      await settleRealAsync(tester);
+
+      expect(find.text('Page 1 / 3'), findsOneWidget);
+      expect(repo.byId(doc.id)!.pages, hasLength(3));
     },
   );
 }

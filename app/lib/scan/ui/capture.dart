@@ -275,7 +275,7 @@ Future<void> readjustReceipt(
         processedJpeg: scan.processedJpeg,
       );
     case ReviewContinue():
-      await onDelete();
+      if (context.mounted) await onDelete();
     case _:
       return;
   }
@@ -318,9 +318,9 @@ Future<void> _savePage(
 Future<void> saveDocumentEdit(
   DocumentRepository repo,
   String documentId,
+  List<ScannedPage> before,
   List<ScanResult> pages,
 ) async {
-  final before = repo.byId(documentId)?.pages ?? const <ScannedPage>[];
   final reviewed = {for (final p in pages) p.photoPath: p};
   for (final page in before) {
     final scan = reviewed[page.originalPath];
@@ -382,17 +382,20 @@ Future<void> editDocument(
     );
     switch (outcome) {
       case ReviewSaved(:final pages):
-        return saveDocumentEdit(repo, documentId, pages);
+        return saveDocumentEdit(repo, documentId, doc.pages, pages);
       case ReviewContinue(session: final kept, addMore: true):
+        if (!context.mounted) return;
         final added = await source(ScanMode.document);
         session = added.fold(kept, (s, p) => s.withPage(p));
         page = added.isEmpty ? 0 : kept.pages.length;
+      // En modification, la revue ne rend ce cas qu'à la suppression de la dernière page.
       case ReviewContinue():
-        if (context.mounted &&
-            await _confirmRemoveAll(context, doc.pages.length)) {
-          await saveDocumentEdit(repo, documentId, const []);
+        if (!context.mounted) return;
+        if (await _confirmRemoveAll(context, session.pages.length)) {
+          return saveDocumentEdit(repo, documentId, doc.pages, const []);
         }
-        return;
+        // Annulé : la revue est rouverte, pages remises.
+        page = 0;
       case null:
         return;
     }

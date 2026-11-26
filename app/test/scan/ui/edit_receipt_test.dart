@@ -144,4 +144,20 @@ void main() {
     expect(kept.status, expense.status);
     expect(File(kept.processedPath!).readAsBytesSync(), [1]);
   });
+
+  testWidgets('revenir en arrière ne modifie pas la dépense', (tester) async {
+    var deleteAsked = false;
+    await edit(tester, onDelete: () => deleteAsked = true);
+
+    await tester.tap(find.text('Pivoter'));
+    await settleRealAsync(tester);
+    await tester.pageBack();
+    await settleRealAsync(tester);
+    await until(tester, () => false);
+
+    final kept = repo.byId(expense.id)!;
+    expect(kept.rotation, expense.rotation);
+    expect(File(kept.processedPath!).readAsBytesSync(), [1]);
+    expect(deleteAsked, isFalse);
+  });
 }
